@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/DavidCortesA/kerygma-live/releases/latest"><b>Descargar la última versión</b></a>
+  <a href="https://github.com/DavidCortesA/kergyme-live/releases/latest"><b>Descargar la última versión</b></a>
   ·
   Hermano de <a href="https://github.com/DavidCortesA/converter-kerygma">Kerygma Converter</a> y <a href="https://github.com/DavidCortesA/keygma-yt-downloader">Kerygma Downloader</a>
 </p>
