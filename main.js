@@ -4,7 +4,7 @@ const os = require('os');
 const path = require('path');
 
 const settingsSchema = require('./src/core/settings');
-const { checklist, summarize, serviceFor } = require('./src/core/checklist');
+const { checklist, setupSummary, summarize, serviceFor } = require('./src/core/checklist');
 const obsConfig = require('./src/core/obs-config');
 const obsApi = require('./src/core/obs');
 const checks = require('./src/main/checks');
@@ -88,6 +88,7 @@ function context(settings, { auto = false, devices = null } = {}) {
     devices,
     secrets,
     state: session,
+    saveSettings,
     electron: { screen, nativeImage, clipboard, shell },
     showPatterns,
   };
@@ -244,6 +245,7 @@ function initPayload() {
     secrets: secrets.status(),
     obsWebsocket: { exists: ws.exists, enabled: ws.enabled, port: ws.port },
     items: checklist(settings),
+    setup: setupSummary(settings),
     service: serviceFor(settings.services)?.id || null,
   };
 }

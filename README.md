@@ -17,6 +17,8 @@
 
 ![Kerygma Live con todo listo para transmitir](docs/screenshots/6-listo.png)
 
+Nada viene fijo: cada iglesia elige una vez su programa, a dónde transmite (YouTube, Facebook o un servidor RTMP), su navegador, de dónde entra el audio, sus cámaras y sus pantallas. Queda guardado en la computadora y se cambia cuando quieras desde **Configuración** (o con **Cambiar configuración** en el checklist).
+
 La idea: el equipo de medios llega, pulsa **Preparar todo** y la app hace la configuración básica. Lo que no puede revisar sola (conectar un celular, confirmar que el proyector se ve) queda en el checklist y se marca en cuanto está listo. **Encender, iniciar y terminar la transmisión sigue siendo cosa de personas**: la app nunca sale al aire sin que alguien lo confirme.
 
 ## Una app, dos modos
@@ -34,13 +36,13 @@ La misma app se instala en cada computadora y cada una revisa lo suyo. El modo s
 |---|---|---|
 | **Conexión a internet** | Red local, que respondan Facebook y YouTube, latencia y velocidad de subida contra el bitrate de OBS | — |
 | **OBS Studio** | Instalado, abierto y conectado por WebSocket; perfil, colección de escenas y si ya está transmitiendo | Abre OBS y, si su WebSocket está apagado, lo activa antes |
-| **Página de transmisión** | En Safari, Chrome o Edge (macOS) lee la pestaña al frente y revisa que sea la página de la iglesia o el Productor en vivo | Abre la página o cambia la pestaña; pide confirmar que publicas **como la página** y no como tu perfil |
+| **Página de transmisión** | YouTube Studio, el Productor en vivo de Facebook o el panel de tu servidor. Con Safari, Chrome o Edge (macOS) lee la pestaña al frente; con el navegador predeterminado, Firefox o en Windows pide confirmarla | Abre la página en una pestaña nueva. En Facebook pide confirmar que publicas **como la página** y no como tu perfil |
 | **Clave de transmisión** | Que OBS tenga el servidor y la clave correctos | Pone la clave en OBS (nunca mientras transmite) |
-| **Audio** | Que el dispositivo (ej. **MAONO**) esté conectado, que una fuente de OBS lo use, que no entre también el micrófono por defecto, y el nivel de señal | Mide la señal 3 s; con un clic asigna el dispositivo a OBS o silencia el micrófono por defecto |
+| **Audio** | Que OBS tome el sonido de una **entrada externa** (consola, interfaz, micrófono USB, capturadora) y **no del micrófono de la computadora**, sin importar la marca; que no se cuele también el de la computadora; y el nivel de señal. Si eliges a propósito el micrófono de la computadora, solo te lo recuerda | Mide la señal 3 s; con un clic pone la entrada externa en OBS o silencia el micrófono de la computadora |
 | **Letras y versículos (NDI)** | Que OBS tenga la fuente NDI de Holyrics/ProPresenter, que el emisor esté en la red y que no llegue en negro | Con un clic crea la fuente en OBS si el emisor está en la red |
 | **Cámaras** | Cada cámara: celulares y PTZ por NDI, capturadora HDMI, cámara USB o switcher (ATEM u otro módulo). Que lleguen a OBS y con imagen, con vista previa | Se revisan solas cada pocos segundos: los celulares se pueden conectar al final |
 | **Escenas y salida** | Escena al aire, fuentes visibles y ocultas, resolución y fps de salida | Pone al aire la escena de transmisión elegida |
-| **Título del servicio** | El del día (Domingo, Miércoles…) | Lo escribe en la fuente de texto de OBS y lo copia para pegarlo en Facebook |
+| **Título del servicio** | El del día (los servicios y sus días los defines tú) | Lo escribe en la fuente de texto de OBS y lo copia para pegarlo en YouTube o Facebook |
 
 ### Modo Pantalla
 
@@ -62,9 +64,9 @@ La misma app se instala en cada computadora y cada una revisa lo suyo. El modo s
 | | Opciones |
 |---|---|
 | Programa de transmisión | **OBS Studio** (revisión y configuración automática), Streamlabs, vMix (Windows), Ecamm Live (Mac) u otro |
-| Destino | **Facebook Live**, YouTube Live o un servidor RTMP propio |
-| Navegador | Safari (Mac), Google Chrome, Microsoft Edge, Firefox |
-| Audio | Consola o interfaz USB (MAONO, Focusrite…), mezcladora digital, micrófono USB, audio de la capturadora o el de la computadora |
+| Destino | YouTube Live, Facebook Live o un servidor RTMP propio |
+| Navegador | El predeterminado de la computadora, Safari (Mac), Google Chrome, Microsoft Edge, Firefox, o ninguno |
+| Audio | Cualquier entrada externa (consola, interfaz, mezcladora, micrófono USB, capturadora) o, a propósito, el micrófono de la computadora |
 | Cámaras | Celulares por NDI, cámaras PTZ/IP por NDI, capturadora HDMI, cámara USB, switcher o módulo de cámaras |
 | Presentación | **Holyrics**, **ProPresenter**, EasyWorship (Windows), OpenLP u otro |
 | Pantallas | Hasta 4 de salida: proyector, pantalla o TV, receptor inalámbrico HDMI, pantalla de retorno |
@@ -74,7 +76,7 @@ La misma app se instala en cada computadora y cada una revisa lo suyo. El modo s
 | Elegir el modo | Asistente: cámaras |
 |---|---|
 | ![Pantalla inicial con los modos Transmisión y Pantalla](docs/screenshots/1-inicio.png) | ![Asistente de configuración en el paso de cámaras](docs/screenshots/2-asistente.png) |
-| **Checklist a medio preparar** | **Audio MAONO con señal** |
+| **Checklist a medio preparar** | **Audio externo con señal** |
 | ![Checklist con revisiones completadas y pendientes](docs/screenshots/3-checklist.png) | ![Detalle del audio con el medidor de nivel](docs/screenshots/4-audio.png) |
 | **Cámaras: una conectada, dos pendientes** | **Configuración** |
 | ![Detalle de cámaras con vista previa](docs/screenshots/5-camaras.png) | ![Configuración del modo Transmisión](docs/screenshots/9-configuracion.png) |
@@ -88,8 +90,9 @@ La misma app se instala en cada computadora y cada una revisa lo suyo. El modo s
 1. Abre la app y elige el modo de esta computadora. Un asistente pregunta por tu equipo: programa, destino, navegador, audio, cámaras y servicios (o, en modo Pantalla, el programa de presentación y las pantallas).
 2. **OBS:** la app lee la conexión del WebSocket del propio OBS, así que no hay que escribir contraseñas. Si el WebSocket está apagado, **Preparar todo** lo activa antes de abrir OBS (o actívalo en OBS → Herramientas → Ajustes del servidor WebSocket).
 3. **NDI en OBS:** instala el plugin [DistroAV](https://github.com/DistroAV/DistroAV/releases/latest) y el NDI Runtime. Los celulares usan una app NDI (por ejemplo NDI HX Camera).
-4. **Clave de transmisión:** en Facebook, Productor en vivo → **Clave de transmisión persistente**, para que no cambie cada servicio. Se guarda cifrada en el llavero del sistema.
-5. **macOS** pide permisos la primera vez: **Automatización** (para leer la pestaña de Safari), **Micrófono** y **Cámara** (para ver los dispositivos).
+4. **Clave de transmisión:** usa una que no cambie cada servicio (YouTube Studio → clave reutilizable; Facebook → Productor en vivo → **Clave de transmisión persistente**). Se guarda cifrada en el llavero del sistema.
+5. **macOS** pide permisos la primera vez: **Automatización** (para leer la pestaña de Safari, Chrome o Edge), **Micrófono** y **Cámara** (para ver los dispositivos).
+6. ¿Cambió algo? **Cambiar configuración** en el checklist: otro navegador, otro destino, otra consola, más cámaras… Se guarda para la próxima vez.
 
 ## Seguridad
 
@@ -116,11 +119,11 @@ La app no está firmada con certificados de pago:
 
 ## Lo que todavía no hace
 
-- **Cambiar de perfil en Facebook** ni escribir el título en Facebook: la app revisa la página, pide confirmar que publicas como la página y deja el título copiado para pegarlo.
+- **Escribir el título en YouTube o Facebook**, ni cambiar de perfil en Facebook: la app revisa la página, pide confirmar lo que no puede ver y deja el título copiado para pegarlo.
 - **Leer la pestaña del navegador en Windows o en Firefox:** ahí la app abre la página y pide confirmarla.
 - **Revisar Holyrics por dentro:** detecta si está abierto; que la letra salga en la pantalla correcta se confirma con el patrón y a la vista.
 - **Ver una computadora desde la otra:** cada una revisa lo suyo. La de transmisión sí comprueba que lleguen las letras por NDI.
-- Versión 0.1: probada en macOS (programas, red y pantallas reales; OBS simulado en las pruebas). Falta probarla con OBS, Holyrics, el MAONO y los celulares reales, y en Windows.
+- Versión 0.1: probada en macOS con OBS 32 real (abrirlo, conectarse, escenas, NDI, audio y medidores). Falta probarla con consola, celulares y la computadora de letras conectados, y en Windows.
 
 ## Desarrollo
 
@@ -163,7 +166,8 @@ src/core/                   Lógica sin Electron (se prueba con Node)
   obs.js                    Cliente de OBS WebSocket 5 (sin dependencias) y consultas de audio, NDI, clave y escenas
   obs-config.js             Lee y activa el WebSocket desde el archivo de configuración de OBS
   apps.js                   Encuentra, abre y vigila programas en macOS y Windows
-  browser.js                Lee y cambia la pestaña de Safari/Chrome/Edge (AppleScript) y valida la página
+  browser.js                Lee la pestaña de Safari/Chrome/Edge y abre una nueva (AppleScript); valida la página
+  audio.js                  Distingue el micrófono de la computadora de una entrada externa
   network.js                Red local, latencia y velocidad (speed.cloudflare.com)
   displays.js               Evalúa las pantallas conectadas contra las esperadas
 src/main/checks.js          Cada revisión: qué mira, qué arregla sola y qué acciones ofrece

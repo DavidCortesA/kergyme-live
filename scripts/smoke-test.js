@@ -20,6 +20,7 @@ const browser = require('../src/core/browser');
 const displays = require('../src/core/displays');
 const network = require('../src/core/network');
 const apps = require('../src/core/apps');
+const audio = require('../src/core/audio');
 
 let failed = 0;
 async function test(name, fn) {
@@ -43,11 +44,11 @@ function fakeObs(password) {
     stream: { streamServiceType: 'rtmp_common', streamServiceSettings: { service: 'YouTube - RTMPS', server: 'auto', key: 'vieja' } },
     inputs: {
       'Mic/Aux': { kind: 'coreaudio_input_capture', settings: { device_id: 'default' }, muted: false },
-      Consola: { kind: 'coreaudio_input_capture', settings: { device_id: 'AppleUSB:maono' }, muted: false },
+      Consola: { kind: 'coreaudio_input_capture', settings: { device_id: 'AppleUSB:scarlett' }, muted: false },
       'Letras (NDI)': { kind: 'ndi_source', settings: { ndi_source_name: 'HOLYRICS-PC (Holyrics)' } },
       Título: { kind: 'text_ft2_source_v2', settings: { text: 'Otro' } },
     },
-    devices: [{ itemName: 'Predeterminado', itemValue: 'default' }, { itemName: 'MAONO AU-AM200', itemValue: 'AppleUSB:maono' }, { itemName: 'MacBook Pro Micrófono', itemValue: 'BuiltIn' }],
+    devices: [{ itemName: 'Predeterminado', itemValue: 'default' }, { itemName: 'Scarlett 2i2 USB', itemValue: 'AppleUSB:scarlett' }, { itemName: 'MacBook Pro Micrófono', itemValue: 'BuiltIn' }],
     ndiNetwork: ['HOLYRICS-PC (Holyrics)', 'IPHONE-JUAN (NDI HX Camera)'],
     requests: [],
   };
@@ -106,19 +107,22 @@ function fakeObs(password) {
     const d = settings.effective({});
     assert.strictEqual(d.mode, null);
     assert.strictEqual(d.transmission.software, 'obs');
+    assert.strictEqual(d.transmission.destination, null, 'el destino no se da por hecho');
+    assert.strictEqual(d.transmission.browser, null, 'el navegador no se da por hecho');
+    assert.strictEqual(d.transmission.audio.source, 'external');
     const clean = settings.sanitize({
-      mode: 'hacker', theme: 'light', org: '  Montaña de Dios  ',
+      mode: 'hacker', theme: 'light', org: '  Iglesia Central  ',
       transmission: {
-        destination: 'facebook', pageUrl: 'facebook.com/MontanadeDios', server: 'javascript:alert(1)', bitrateKbps: 999999,
+        destination: 'facebook', pageUrl: 'facebook.com/IglesiaCentral', server: 'javascript:alert(1)', bitrateKbps: 999999,
         cameras: [{ name: 'Celular 1', type: 'ndi', source: 'IPHONE' }, { name: '', type: 'ndi' }, { name: 'X', type: 'raro' }],
-        audio: { device: 'MAONO', required: 'sí' },
+        audio: { device: 'Scarlett', required: 'sí' },
       },
       services: [{ name: 'Domingo', weekday: 0, title: 'Culto' }, { name: 'Mal', weekday: 9 }],
       screen: { outputs: [{ role: 'projector', name: 'Proyector' }, { role: 'pared' }], apiPort: 50001 },
     });
     assert.strictEqual(clean.mode, undefined);
-    assert.strictEqual(clean.org, 'Montaña de Dios');
-    assert.strictEqual(clean.transmission.pageUrl, 'https://facebook.com/MontanadeDios');
+    assert.strictEqual(clean.org, 'Iglesia Central');
+    assert.strictEqual(clean.transmission.pageUrl, 'https://facebook.com/IglesiaCentral');
     assert.strictEqual(clean.transmission.server, undefined);
     assert.strictEqual(clean.transmission.bitrateKbps, undefined);
     assert.strictEqual(clean.transmission.cameras.length, 1);
@@ -126,9 +130,13 @@ function fakeObs(password) {
     assert.deepStrictEqual(clean.services.map((s) => s.weekday), [0, null]);
     assert.strictEqual(clean.screen.outputs.length, 1);
     assert.strictEqual(settings.sanitize({ transmission: { pageUrl: 'file:///etc/passwd' } }).transmission.pageUrl, undefined);
-    const merged = settings.merge(d, settings.sanitize({ transmission: { audio: { device: 'MAONO' } } }));
-    assert.strictEqual(merged.transmission.audio.device, 'MAONO');
-    assert.strictEqual(merged.transmission.audio.type, 'usb-console');
+    const merged = settings.merge(d, settings.sanitize({ transmission: { audio: { device: 'Scarlett' } } }));
+    assert.strictEqual(merged.transmission.audio.device, 'Scarlett');
+    assert.strictEqual(merged.transmission.audio.source, 'external');
+    // Configuración de la 0.1: "builtin" pasa a ser el micrófono de la computadora.
+    assert.strictEqual(settings.effective({ transmission: { audio: { type: 'builtin' } } }).transmission.audio.source, 'computer');
+    assert.strictEqual(settings.effective({ transmission: { audio: { type: 'usb-console' } } }).transmission.audio.source, 'external');
+    assert.strictEqual(settings.sanitize({ transmission: { browser: 'default' } }).transmission.browser, 'default');
   });
 
   await test('checklist de transmisión según el equipo (OBS, Safari, NDI, cámaras)', () => {
@@ -142,6 +150,37 @@ function fakeObs(password) {
 
     const other = settings.effective({ mode: 'transmission', transmission: { software: 'streamlabs', browser: 'none' } });
     assert.deepStrictEqual(checklist(other).map((i) => i.id), ['internet', 'software', 'audio', 'title']);
+  });
+
+  await test('resumen de la configuración en una línea', () => {
+    const { setupSummary } = require('../src/core/checklist');
+    const yt = settings.effective({ mode: 'transmission', transmission: { destination: 'youtube', browser: 'default', cameras: [{ name: 'Cámara', type: 'capture' }] } });
+    assert.strictEqual(setupSummary(yt), 'OBS Studio · YouTube Live · Navegador predeterminado · Audio externo · 1 cámara');
+    const pc = settings.effective({ mode: 'transmission', transmission: { destination: 'facebook', browser: 'none', audio: { source: 'computer' } } });
+    assert.match(setupSummary(pc), /Facebook Live · Sin navegador · Micrófono de la computadora/);
+    assert.strictEqual(checklist(pc).find((i) => i.id === 'audio').title, 'Audio de la computadora');
+  });
+
+  await test('audio: micrófono de la computadora contra entrada externa', () => {
+    const profiler = [
+      'Audio:', '', '    Devices:', '',
+      '        MacBook Air (micrófono):', '', '          Default Input Device: Yes', '          Input Channels: 1', '          Transport: Built-in', '',
+      '        MacBook Air (bocinas):', '', '          Output Channels: 2', '          Transport: Built-in', '',
+      '        Scarlett 2i2 USB:', '', '          Input Channels: 2', '          Output Channels: 2', '          Transport: USB', '',
+      '        ZoomAudioDevice:', '', '          Input Channels: 2', '          Transport: Virtual', '',
+    ].join('\n');
+    const devices = audio.parseMacAudio(profiler);
+    assert.deepStrictEqual(devices.map((d) => d.name), ['MacBook Air (micrófono)', 'Scarlett 2i2 USB', 'ZoomAudioDevice'], 'solo entradas');
+    assert.deepStrictEqual(devices.map((d) => audio.origin(d.name, devices)), ['computer', 'external', 'virtual']);
+    const inputs = audio.classifyInputs([
+      { inputName: 'Mic/Aux', deviceName: '', isDefault: true },
+      { inputName: 'Consola', deviceName: 'Scarlett 2i2 USB', isDefault: false },
+    ], devices);
+    assert.deepStrictEqual(inputs.map((i) => [i.resolvedName, i.origin]), [['MacBook Air (micrófono)', 'computer'], ['Scarlett 2i2 USB', 'external']]);
+    // Windows: sin tipo del sistema, por nombre; "Predeterminado" se trata como de la computadora.
+    assert.strictEqual(audio.origin('Micrófono (Realtek(R) Audio)'), 'computer');
+    assert.strictEqual(audio.origin('Micrófono (Focusrite USB Audio)'), 'external');
+    assert.strictEqual(audio.classifyInputs([{ inputName: 'Mic', deviceName: '', isDefault: true }])[0].origin, 'computer');
   });
 
   await test('checklist de pantalla y resumen (omitido no bloquea, obligatorio sí)', () => {
@@ -160,13 +199,13 @@ function fakeObs(password) {
     assert.strictEqual(serviceFor(services, new Date(2026, 9, 25)).id, 'domingo'); // domingo
     assert.strictEqual(serviceFor(services, new Date(2026, 9, 28)).id, 'miercoles');
     assert.strictEqual(serviceFor(services, new Date(2026, 9, 29)).id, 'domingo', 'sin coincidencia, el primero');
-    assert.strictEqual(serviceTitle(services[0], 'Montaña de Dios'), 'Domingo | Montaña de Dios');
-    assert.strictEqual(serviceTitle(services[1], 'Montaña de Dios'), 'Reunión de oración');
+    assert.strictEqual(serviceTitle(services[0], 'Iglesia Central'), 'Domingo | Iglesia Central');
+    assert.strictEqual(serviceTitle(services[1], 'Iglesia Central'), 'Reunión de oración');
   });
 
   await test('página del navegador: Facebook, otra página, Productor en vivo y YouTube', () => {
-    const page = 'https://www.facebook.com/MontanadeDios';
-    assert.strictEqual(browser.pageMatches('https://www.facebook.com/montanadedios/live', page, 'facebook').ok, true);
+    const page = 'https://www.facebook.com/IglesiaCentral';
+    assert.strictEqual(browser.pageMatches('https://www.facebook.com/iglesiacentral/live', page, 'facebook').ok, true);
     assert.strictEqual(browser.pageMatches('https://www.facebook.com/live/producer/?ref=x', page, 'facebook').where, 'producer');
     assert.strictEqual(browser.pageMatches('https://www.facebook.com/OtraIglesia', page, 'facebook').ok, false);
     assert.strictEqual(browser.pageMatches('https://www.google.com', page, 'facebook').ok, false);
@@ -214,7 +253,7 @@ function fakeObs(password) {
     assert.ok(apps.CATALOG.obs && apps.CATALOG.holyrics && apps.CATALOG.propresenter);
   });
 
-  await test('OBS simulado: autenticación, OBS aún cargando, audio MAONO, NDI, clave y medidores', async () => {
+  await test('OBS simulado: autenticación, OBS aún cargando, audio externo, NDI, clave y medidores', async () => {
     const { server, port, obs } = await fakeObs('clave-obs');
     const client = new obsApi.ObsClient();
     try {
@@ -226,8 +265,8 @@ function fakeObs(password) {
       await assert.rejects(client.request('Inventado'), (e) => e.code === 'REQUEST_204');
 
       const audio = await obsApi.audioInputs(client);
-      const maono = audio.find((a) => obsApi.matches(a.deviceName, 'maono'));
-      assert.strictEqual(maono.inputName, 'Consola');
+      const ext = audio.find((a) => obsApi.matches(a.deviceName, 'scarlett'));
+      assert.strictEqual(ext.inputName, 'Consola');
       assert.strictEqual(audio.find((a) => a.inputName === 'Mic/Aux').isDefault, true);
 
       const ndi = await obsApi.ndiInputs(client);
@@ -239,8 +278,8 @@ function fakeObs(password) {
       const target = await obsApi.streamTarget(client);
       assert.deepStrictEqual([target.type, target.server, target.key], ['rtmp_custom', 'rtmps://live-api-s.facebook.com:443/rtmp/', 'FB-123']);
 
-      await obsApi.setText(client, 'Título', 'Domingo | Montaña de Dios');
-      assert.strictEqual(obs.inputs['Título'].settings.text, 'Domingo | Montaña de Dios');
+      await obsApi.setText(client, 'Título', 'Domingo | Iglesia Central');
+      assert.strictEqual(obs.inputs['Título'].settings.text, 'Domingo | Iglesia Central');
 
       const items = await obsApi.sceneItems(client, 'Transmisión');
       assert.deepStrictEqual(items.map((i) => i.enabled), [true, false]);
@@ -256,7 +295,7 @@ function fakeObs(password) {
   await test('sin OBS abierto: error claro, sin colgarse', async () => {
     const client = new obsApi.ObsClient();
     await assert.rejects(client.connect({ port: 1, timeout: 3000 }), (e) => ['UNREACHABLE', 'CLOSED', 'TIMEOUT'].includes(e.code));
-    assert.strictEqual(obsApi.matches('Montaña de Dios', 'montana'), true);
+    assert.strictEqual(obsApi.matches('Cámara Escenario', 'camara'), true);
     assert.strictEqual(obsApi.matches('algo', ''), false);
   });
 

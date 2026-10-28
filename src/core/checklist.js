@@ -19,11 +19,8 @@ const PRESENTER = {
   holyrics: 'Holyrics', propresenter: 'ProPresenter', easyworship: 'EasyWorship', openlp: 'OpenLP', other: 'Programa de presentación',
 };
 const DESTINATION = { facebook: 'Facebook Live', youtube: 'YouTube Live', custom: 'Servidor RTMP' };
-const BROWSER = { safari: 'Safari', chrome: 'Google Chrome', edge: 'Microsoft Edge', firefox: 'Firefox', none: '' };
-const AUDIO_TYPE = {
-  'usb-console': 'Consola o interfaz USB', 'usb-mic': 'Micrófono USB', mixer: 'Mezcladora digital',
-  hdmi: 'Audio de la capturadora HDMI', builtin: 'Micrófono de la computadora',
-};
+const BROWSER = { default: 'Navegador predeterminado', safari: 'Safari', chrome: 'Google Chrome', edge: 'Microsoft Edge', firefox: 'Firefox', none: '' };
+const AUDIO_SOURCE = { external: 'Audio externo', computer: 'Micrófono de la computadora' };
 const CAMERA_TYPE = {
   ndi: 'Celular o cámara por NDI', capture: 'Capturadora HDMI', webcam: 'Cámara USB',
   switcher: 'Switcher o módulo de cámaras', ip: 'Cámara IP / PTZ por NDI',
@@ -45,18 +42,21 @@ function transmissionChecks(s) {
       subtitle: usesObs ? 'Abierto y conectado por WebSocket' : 'Abierto y listo', required: true,
     },
   ];
-  if (t.browser !== 'none') {
+  const dest = DESTINATION[t.destination] || 'Destino';
+  if (t.browser && t.browser !== 'none') {
     list.push({
-      id: 'page', icon: 'globe', title: `${BROWSER[t.browser]} · ${DESTINATION[t.destination]}`,
+      id: 'page', icon: 'globe', title: `${BROWSER[t.browser]} · ${dest}`,
       subtitle: t.pageName ? `Página de ${t.pageName}` : 'Página de la transmisión', required: true,
     });
   }
   if (usesObs) {
-    list.push({ id: 'streamkey', icon: 'key', title: 'Clave de transmisión', subtitle: `Configurada en OBS para ${DESTINATION[t.destination]}`, required: true });
+    list.push({ id: 'streamkey', icon: 'key', title: 'Clave de transmisión', subtitle: `Configurada en OBS para ${dest}`, required: true });
   }
+  const external = t.audio.source !== 'computer';
   list.push({
-    id: 'audio', icon: 'mic', title: t.audio.device ? `Audio ${t.audio.device}` : 'Audio',
-    subtitle: usesObs ? 'Dispositivo detectado y señal en OBS' : 'Dispositivo detectado y señal', required: t.audio.required,
+    id: 'audio', icon: 'mic', title: external ? (t.audio.device ? `Audio · ${t.audio.device}` : 'Audio externo') : 'Audio de la computadora',
+    subtitle: external ? `Que ${usesObs ? 'OBS' : 'la transmisión'} no use el micrófono de la computadora, y la señal` : 'Elegido a propósito: se revisa la señal',
+    required: t.audio.required,
   });
   if (t.lyrics.enabled) {
     list.push({ id: 'lyrics', icon: 'text', title: 'Letras y versículos (NDI)', subtitle: `Fuente ${t.lyrics.source || 'NDI'} en ${usesObs ? 'OBS' : 'la transmisión'}`, required: true });
@@ -88,6 +88,27 @@ function screenChecks(s) {
   if (sc.ndiOut) list.push({ id: 'ndiout', icon: 'share', title: 'Salida NDI', subtitle: 'Letras y versículos para la transmisión', required: true });
   list.push({ id: 'network', icon: 'wifi', title: 'Red', subtitle: 'Red local e internet', required: false });
   return list;
+}
+
+/** Resumen de la configuración en una línea (para el encabezado del checklist). */
+function setupSummary(settings) {
+  if (settings.mode === 'transmission') {
+    const t = settings.transmission;
+    const cams = t.cameras.length;
+    return [
+      SOFTWARE[t.software],
+      DESTINATION[t.destination] || 'Sin destino',
+      t.browser === 'none' ? 'Sin navegador' : BROWSER[t.browser] || 'Sin navegador',
+      AUDIO_SOURCE[t.audio.source] || AUDIO_SOURCE.external,
+      cams ? `${cams} cámara${cams === 1 ? '' : 's'}` : null,
+      t.lyrics.enabled ? 'Letras por NDI' : null,
+    ].filter(Boolean).join(' · ');
+  }
+  if (settings.mode === 'screen') {
+    const n = settings.screen.outputs.length;
+    return [PRESENTER[settings.screen.software], `${n} pantalla${n === 1 ? '' : 's'} de salida`, settings.screen.ndiOut ? 'Salida NDI' : null].filter(Boolean).join(' · ');
+  }
+  return '';
 }
 
 /** Lista de revisiones del modo elegido. */
@@ -123,6 +144,6 @@ function serviceTitle(service, org) {
 }
 
 module.exports = {
-  STATUSES, SOFTWARE, PRESENTER, DESTINATION, BROWSER, AUDIO_TYPE, CAMERA_TYPE, OUTPUT_ROLE,
-  isNdiCamera, checklist, summarize, serviceFor, serviceTitle,
+  STATUSES, SOFTWARE, PRESENTER, DESTINATION, BROWSER, AUDIO_SOURCE, CAMERA_TYPE, OUTPUT_ROLE,
+  isNdiCamera, checklist, setupSummary, summarize, serviceFor, serviceTitle,
 };

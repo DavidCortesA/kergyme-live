@@ -10,7 +10,7 @@ const { app, BrowserWindow, ipcMain, nativeTheme } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const settingsSchema = require('../src/core/settings');
-const { checklist, serviceFor } = require('../src/core/checklist');
+const { checklist, setupSummary, serviceFor } = require('../src/core/checklist');
 
 const outDir = path.resolve(process.argv[2] || path.join(__dirname, '..', 'dist', 'screenshots'));
 fs.mkdirSync(outDir, { recursive: true });
@@ -22,25 +22,25 @@ const frame = (a, b, label) =>
   encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><rect width="320" height="180" fill="url(#g)"/><text x="16" y="164" font-family="Helvetica" font-size="15" fill="#fff" opacity=".85">${label}</text></svg>`);
 
 const TRANSMISSION = settingsSchema.effective({
-  mode: 'transmission', setupDone: true, org: 'Montaña de Dios', computerName: 'Mac de transmisión', theme: 'dark',
+  mode: 'transmission', setupDone: true, org: 'Iglesia Central', computerName: 'Mac de transmisión', theme: 'dark',
   transmission: {
-    software: 'obs', destination: 'facebook', pageName: 'Montaña de Dios', pageUrl: 'facebook.com/MontanadeDios', browser: 'safari',
-    audio: { type: 'usb-console', device: 'MAONO', required: true },
+    software: 'obs', destination: 'youtube', pageName: 'Iglesia Central', pageUrl: 'youtube.com/@IglesiaCentral', browser: 'chrome',
+    audio: { source: 'external', device: '', required: true },
     cameras: [
       { id: 'c1', name: 'Celular 1 · Escenario', type: 'ndi', source: 'IPHONE-ESCENARIO' },
       { id: 'c2', name: 'Celular 2 · Iglesia', type: 'ndi', source: 'IPHONE-IGLESIA' },
       { id: 'c3', name: 'Celular 3 · Público', type: 'ndi', source: 'IPHONE-PUBLICO' },
     ],
-    lyrics: { enabled: true, source: 'Holyrics' },
+    lyrics: { enabled: true, source: 'Letras' },
     obs: { scene: 'Transmisión', titleSource: 'Título' },
   },
   services: [
-    { id: 'domingo', name: 'Domingo', weekday: 0, title: 'Culto General | Montaña de Dios' },
-    { id: 'miercoles', name: 'Miércoles', weekday: 3, title: 'Reunión de Miércoles | Montaña de Dios' },
+    { id: 'domingo', name: 'Domingo', weekday: 0, title: 'Culto dominical | Iglesia Central' },
+    { id: 'oracion', name: 'Oración', weekday: 3, title: 'Noche de oración | Iglesia Central' },
   ],
 });
 const SCREEN = settingsSchema.effective({
-  mode: 'screen', setupDone: true, org: 'Montaña de Dios', computerName: 'Mac de proyección',
+  mode: 'screen', setupDone: true, org: 'Iglesia Central', computerName: 'Mac de proyección',
   screen: { software: 'holyrics', outputs: [{ id: 'o1', role: 'projector', name: 'Proyector' }, { id: 'o2', role: 'stage', name: 'Retorno del púlpito' }], ndiOut: true },
 });
 
@@ -49,25 +49,27 @@ const A = (id, label, primary = false) => ({ id, label, primary });
 
 const READY = {
   internet: R('ok', 'Conexión estable: 48.6 Mbps de subida.', [
-    { label: 'Red local', value: '192.168.1.20 (en0)', status: 'ok' }, { label: 'www.facebook.com', value: 'Responde', status: 'ok' },
+    { label: 'Red local', value: '192.168.1.20 (en0)', status: 'ok' }, { label: 'www.youtube.com', value: 'Responde', status: 'ok' },
     { label: 'Latencia', value: '23 ms', status: 'ok' }, { label: 'Subida', value: '48.6 Mbps', status: 'ok' }, { label: 'Bajada', value: '212.4 Mbps' },
     { label: 'Recomendado', value: '9.2 Mbps de subida para 6000 kbps' },
   ], [A('retry', 'Medir de nuevo')]),
   software: R('ok', 'OBS está abierto y conectado.', [
-    { label: 'Versión', value: 'OBS 32.2.2 · WebSocket 5.6.3' }, { label: 'Perfil', value: 'Montaña de Dios' },
+    { label: 'Versión', value: 'OBS 32.2.2 · WebSocket 5.7.4' }, { label: 'Perfil', value: 'Iglesia Central' },
     { label: 'Colección de escenas', value: 'Servicio' }, { label: 'Salida', value: 'Lista (sin transmitir)', status: 'ok' },
   ], [A('open-app', 'Ver en OBS')]),
-  page: R('ok', 'Estás en la página correcta como Montaña de Dios.', [{ label: 'Pestaña al frente', value: 'https://www.facebook.com/live/producer/', status: 'ok' }], [A('open-page', 'Abrir Facebook Live')]),
+  page: R('ok', 'Estás en la página correcta.', [{ label: 'Pestaña al frente', value: 'https://studio.youtube.com/channel/UCiglesia/livestreaming', status: 'ok' }], [A('open-page', 'Abrir YouTube Live'), A('open-settings', 'Cambiar navegador o destino')]),
   streamkey: R('ok', 'OBS tiene la clave y el servidor correctos.', [
-    { label: 'Destino', value: 'Facebook Live' }, { label: 'Servidor en OBS', value: 'rtmps://live-api-s.facebook.com:443/rtmp/', status: 'ok' },
+    { label: 'Destino', value: 'YouTube Live' }, { label: 'Servidor en OBS', value: 'rtmp://a.rtmp.youtube.com/live2', status: 'ok' },
     { label: 'Clave en OBS', value: '••••••••7Q2k', status: 'ok' },
   ], [A('copy-key', 'Copiar clave')]),
-  audio: R('ok', 'OBS recibe audio de MAONO.', [
-    { label: 'Dispositivo', value: 'MAONO conectado', status: 'ok' }, { label: 'Fuente en OBS', value: 'Consola (MAONO AU-AM200)', status: 'ok' },
+  audio: R('ok', 'OBS recibe audio de Scarlett 2i2 USB, no del micrófono de la computadora.', [
+    { label: 'Fuente “Consola”', value: 'Scarlett 2i2 USB · externa', status: 'ok' },
+    { label: 'Fuente “Mic/Aux”', value: 'MacBook Pro (micrófono) · de la computadora · silenciada' },
+    { label: 'Entradas externas conectadas', value: 'Scarlett 2i2 USB' },
     { label: 'Nivel de audio', value: '-12 dB', status: 'ok', meter: -12 },
-  ], [A('test-signal', 'Probar señal (5 s)'), A('retry', 'Reintentar')]),
-  lyrics: R('ok', 'Llegan las letras y versículos de Holyrics.', [
-    { label: 'Fuente', value: '“Letras (NDI)” recibe imagen', status: 'ok' }, { label: 'Emisores NDI en la red', value: 'MAC-PROYECCION (Holyrics), IPHONE-ESCENARIO, IPHONE-IGLESIA, IPHONE-PUBLICO' },
+  ], [A('test-signal', 'Probar señal (5 s)'), A('retry', 'Reintentar'), A('open-settings', 'Cambiar origen del audio')]),
+  lyrics: R('ok', 'Llegan las letras y versículos (“Letras”).', [
+    { label: 'Fuente', value: '“Letras” recibe imagen', status: 'ok' }, { label: 'Emisores NDI en la red', value: 'MAC-PROYECCION (Holyrics), IPHONE-ESCENARIO, IPHONE-IGLESIA, IPHONE-PUBLICO' },
   ], [A('retry', 'Reintentar')], { preview: frame('#1d2a4a', '#0b0f1c', 'Salmo 23:1 — Jehová es mi pastor') }),
   cameras: R('ok', 'Todas las cámaras están conectadas.', [
     { label: 'Celular 1 · Escenario', value: '“Celular 1 · Escenario” recibe imagen', status: 'ok' },
@@ -75,20 +77,21 @@ const READY = {
     { label: 'Celular 3 · Público', value: '“Celular 3 · Público” recibe imagen', status: 'ok' },
   ], [A('retry', 'Revisar de nuevo')]),
   scenes: R('ok', 'Escena “Transmisión” lista para transmitir.', [
-    { label: 'Escena actual', value: 'Transmisión', status: 'ok' }, { label: 'Fuentes visibles', value: 'Celular 1 · Escenario, Letras (NDI), Título, Consola', status: 'ok' },
+    { label: 'Escena actual', value: 'Transmisión', status: 'ok' }, { label: 'Fuentes visibles', value: 'Celular 1 · Escenario, Letras, Título, Consola', status: 'ok' },
     { label: 'Resolución de salida', value: '1920 × 1080 (30 fps)', status: 'ok' }, { label: 'Estado de salida', value: 'Listo (sin transmitir)', status: 'ok' },
   ], [A('open-app', 'Ver en OBS')]),
-  title: R('ok', 'Título listo y copiado para pegarlo en Facebook Live.', [
-    { label: 'Servicio', value: 'Domingo' }, { label: 'Título', value: 'Culto General | Montaña de Dios' }, { label: 'Texto “Título” en OBS', value: 'Culto General | Montaña de Dios', status: 'ok' },
+  title: R('ok', 'Título listo y copiado para pegarlo en YouTube Live.', [
+    { label: 'Servicio', value: 'Domingo' }, { label: 'Título', value: 'Culto dominical | Iglesia Central' }, { label: 'Texto “Título” en OBS', value: 'Culto dominical | Iglesia Central', status: 'ok' },
   ], [A('copy-title', 'Copiar título')]),
 };
 
 const PARTIAL = {
   ...READY,
   software: R('running', ''),
-  audio: R('pending', 'No se detecta MAONO. Si aún no está conectado, se revisará solo cuando lo conectes.', [
-    { label: 'Dispositivo', value: 'MAONO no detectado', status: 'error' }, { label: 'Fuente en OBS', value: 'Ninguna lo usa', status: 'error' },
-  ], [A('retry', 'Reintentar', true), A('skip', 'Omitir por ahora')]),
+  audio: R('pending', 'No hay ninguna entrada de audio externa conectada (consola, interfaz o micrófono USB). Conéctala; se revisa sola.', [
+    { label: 'Fuente “Mic/Aux”', value: 'MacBook Pro (micrófono) · de la computadora', status: 'warn' },
+    { label: 'Entradas externas conectadas', value: 'Ninguna' },
+  ], [A('retry', 'Reintentar'), A('use-computer', 'Usar el micrófono de la computadora'), A('open-settings', 'Cambiar origen del audio')]),
   lyrics: R('pending', 'Esperando a OBS: ábrelo o usa “Preparar todo”.'),
   cameras: R('pending', '2 de 3 cámaras sin conectar. Se revisan solas cada pocos segundos.', [
     { label: 'Celular 1 · Escenario', value: '“Celular 1 · Escenario” recibe imagen', status: 'ok' },
@@ -119,12 +122,12 @@ let results = PARTIAL;
 ipcMain.handle('app:init', () => ({
   name: 'Kerygma Live', version: '0.1.0', platform: process.platform, hostname: current.computerName,
   settings: current, secrets: { streamKey: true, obsPassword: false }, obsWebsocket: { exists: true, enabled: true, port: 4455 },
-  items: checklist(current), service: current.mode === 'transmission' ? 'domingo' : serviceFor(current.services)?.id,
+  items: checklist(current), setup: setupSummary(current), service: current.mode === 'transmission' ? 'domingo' : serviceFor(current.services)?.id,
 }));
 ipcMain.handle('settings:save', (_e, patch) => {
   current = settingsSchema.merge(current, settingsSchema.sanitize(patch));
   if (patch.theme) nativeTheme.themeSource = patch.theme;
-  return { name: 'Kerygma Live', version: '0.1.0', platform: process.platform, hostname: current.computerName, settings: current, secrets: { streamKey: true }, obsWebsocket: { enabled: true }, items: checklist(current), service: 'domingo' };
+  return { name: 'Kerygma Live', version: '0.1.0', platform: process.platform, hostname: current.computerName, settings: current, secrets: { streamKey: true }, obsWebsocket: { enabled: true }, items: checklist(current), setup: setupSummary(current), service: 'domingo' };
 });
 ipcMain.handle('secrets:set', () => ({ streamKey: true, obsPassword: false }));
 ipcMain.handle('checks:run', (e, id) => {
@@ -138,7 +141,7 @@ ipcMain.handle('checks:service', () => null);
 ipcMain.handle('checks:reset', () => true);
 ipcMain.handle('stream:start', () => ({ ok: true }));
 ipcMain.handle('patterns:show', () => {});
-ipcMain.handle('obs:scan', () => ({ connected: true, scenes: ['Transmisión', 'Pantalla completa', 'Inicio'], textSources: ['Título'], audioDevices: ['MAONO AU-AM200'], ndiNetwork: ['MAC-PROYECCION (Holyrics)'] }));
+ipcMain.handle('obs:scan', () => ({ connected: true, scenes: ['Transmisión', 'Pantalla completa', 'Inicio'], textSources: ['Título'], audioDevices: ['Scarlett 2i2 USB'], ndiInputs: ['Letras', 'Celular 1 · Escenario'], ndiNetwork: ['MAC-PROYECCION (Holyrics)'] }));
 ipcMain.handle('shell:openExternal', () => {});
 
 async function shot(win, name) {
@@ -201,7 +204,7 @@ app.whenReady().then(async () => {
   publish(win);
   await shot(win, '3-checklist.png');
 
-  // 4. Audio MAONO con señal  ·  5. Cámaras: una conectada, dos pendientes
+  // 4. Audio externo con señal  ·  5. Cámaras: una conectada, dos pendientes
   results = { ...PARTIAL, audio: READY.audio };
   publish(win);
   await click(win, '[data-nav="detail:audio"]');

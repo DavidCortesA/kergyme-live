@@ -15,6 +15,7 @@ const obsConfig = require('../core/obs-config');
 const browser = require('../core/browser');
 const network = require('../core/network');
 const displaysCore = require('../core/displays');
+const audioCore = require('../core/audio');
 const { DESTINATION, BROWSER, PRESENTER, OUTPUT_ROLE, CAMERA_TYPE, isNdiCamera, serviceFor, serviceTitle } = require('../core/checklist');
 
 const IS_MAC = process.platform === 'darwin';
@@ -207,27 +208,41 @@ async function presenterOrSoftware(ctx, id, { light = false } = {}) {
   }
 }
 
+/** Abre una dirección en el navegador elegido (o en el predeterminado del sistema). */
+async function openInBrowser(ctx, b, url) {
+  const st = b && b !== 'default' && b !== 'none' ? await apps.status(b) : null;
+  if (st?.path) await apps.open(st.path, url);
+  else await ctx.electron.shell.openExternal(url);
+}
+
+const noDestination = () => result('error', 'Todavía no eliges dónde transmiten.', { actions: [action('open-settings', 'Elegir destino', true)] });
+
 async function page(ctx) {
   const t = ctx.settings.transmission;
   const b = t.browser;
+  if (!t.destination) return noDestination();
   const live = browser.livePageFor(t.destination, t.pageUrl);
-  const st = await apps.status(b);
-  if (!st.installed) return result('error', `${BROWSER[b]} no está instalado.`, { actions: [action('retry', 'Reintentar')] });
-
-  const who = t.pageName || 'la página de la iglesia';
+  const dest = DESTINATION[t.destination] || 'la página de transmisión';
+  const who = t.pageName || (t.destination === 'youtube' ? 'el canal de la iglesia' : 'la página de la iglesia');
   const confirmed = ctx.state.confirmed.has('page');
-  const actions = [action('open-page', `Abrir ${DESTINATION[t.destination]}`)];
-  if (t.pageUrl) actions.push(action('open-profile', 'Abrir la página'));
+  const actions = [action('open-page', `Abrir ${dest}`)];
+  if (t.pageUrl) actions.push(action('open-profile', t.destination === 'youtube' ? 'Abrir el canal' : 'Abrir la página'));
+  actions.push(action('open-settings', 'Cambiar navegador o destino'));
 
-  if (!browser.canRead(b)) {
-    if (ctx.auto && !confirmed) await apps.open(st.path, live);
+  // Navegador predeterminado (o uno que no deja leer la pestaña): se abre la página y se confirma a mano.
+  if (b === 'default' || !browser.canRead(b)) {
+    if (ctx.auto && !confirmed) await openInBrowser(ctx, b, live);
+    const asWho = t.destination === 'facebook' ? ` como ${who}` : '';
     return confirmed
-      ? result('ok', `Confirmado: transmitiendo como ${who}.`, { actions })
-      : result('confirm', `Revisa en ${BROWSER[b]} que estés en ${DESTINATION[t.destination]} como ${who}.`, { actions: [action('confirm', 'Sí, estoy en la página correcta', true), ...actions] });
+      ? result('ok', `Confirmado: ${dest}${asWho}.`, { actions })
+      : result('confirm', `Revisa en ${BROWSER[b]} que estés en ${dest}${asWho}.`, { actions: [action('confirm', 'Sí, estoy en la página correcta', true), ...actions] });
   }
 
+  const st = await apps.status(b);
+  if (!st.installed) return result('error', `${BROWSER[b]} no está instalado.`, { actions: [action('open-settings', 'Elegir otro navegador', true), action('retry', 'Reintentar')] });
+
   if (!st.running) {
-    if (!ctx.auto) return result('error', `${BROWSER[b]} está cerrado.`, { actions: [action('open-page', `Abrir ${DESTINATION[t.destination]}`, true)] });
+    if (!ctx.auto) return result('error', `${BROWSER[b]} está cerrado.`, { actions: [action('open-page', `Abrir ${dest}`, true), ...actions.slice(1)] });
     await apps.open(st.path, live);
     await apps.waitRunning(b, st.path, 10000);
     await new Promise((r) => setTimeout(r, 1500));
@@ -253,7 +268,7 @@ async function page(ctx) {
   }
   const details = [{ label: 'Pestaña al frente', value: url || 'Sin ventanas abiertas', status: m.ok ? 'ok' : 'error' }];
   if (!m.ok) {
-    return result('error', `${m.reason}. Abre ${DESTINATION[t.destination]} para transmitir como ${who}.`, { details, actions: [action('go-page', `Ir a ${DESTINATION[t.destination]}`, true), ...actions.slice(1)] });
+    return result('error', `${m.reason}. Abre ${dest} para transmitir${t.destination === 'facebook' ? ` como ${who}` : ''}.`, { details, actions: [action('go-page', `Ir a ${dest}`, true), ...actions.slice(1)] });
   }
   if (t.destination === 'facebook' && !confirmed) {
     return result('confirm', `Estás en Facebook. Confirma que la publicación sale como ${who} (no como tu perfil personal).`, {
@@ -267,6 +282,7 @@ async function page(ctx) {
 
 async function streamkey(ctx) {
   const t = ctx.settings.transmission;
+  if (!t.destination) return noDestination();
   const key = ctx.secrets.get('streamKey');
   const server = t.destination === 'custom' ? t.server : obsApi.STREAM_SERVERS[t.destination];
   if (!key) {
@@ -299,14 +315,10 @@ async function streamkey(ctx) {
   }
 }
 
-/** Busca el dispositivo de audio en la computadora (lo que ve la interfaz, o system_profiler en Mac). */
+/** Busca un dispositivo de video en la computadora (lo que ve la interfaz, o system_profiler en Mac). */
 async function systemHas(ctx, kind, hint) {
   const list = (ctx.devices?.[kind] || []).filter(Boolean);
   if (list.some((d) => matches(d, hint))) return true;
-  if (IS_MAC && kind === 'audioinput') {
-    const { out } = await apps.run('system_profiler', ['SPAudioDataType']);
-    return matches(out, hint);
-  }
   if (IS_MAC && kind === 'videoinput') {
     const { out } = await apps.run('system_profiler', ['SPCameraDataType', 'SPUSBDataType']);
     return matches(out, hint);
@@ -314,51 +326,82 @@ async function systemHas(ctx, kind, hint) {
   return false;
 }
 
+/** Entradas de audio del sistema: en Mac con su tipo (integrada, virtual, externa); en Windows, por nombre. */
+async function systemAudio(ctx) {
+  if (IS_MAC) return audioCore.parseMacAudio((await apps.run('system_profiler', ['SPAudioDataType'])).out);
+  return (ctx.devices?.audioinput || []).map((name) => ({ name, input: true, defaultInput: false, transport: '' }));
+}
+
+const COMPUTER_MIC_NOTE = 'Con el micrófono de la computadora se oye el ambiente, con eco y a bajo volumen. Úsalo solo si no hay consola o interfaz de audio.';
+
 async function audio(ctx, { light = false } = {}) {
   const t = ctx.settings.transmission;
+  const wantsComputer = t.audio.source === 'computer';
   const hint = t.audio.device;
-  const label = hint || 'la entrada de audio';
-  // Pendiente (no omitido) para que se siga revisando solo; si no es obligatorio, no bloquea.
-  const missingStatus = 'pending';
-  const inSystem = hint ? await systemHas(ctx, 'audioinput', hint) : true;
+  const devices = await systemAudio(ctx);
+  const externals = devices.filter((d) => audioCore.origin(d.name, devices) === 'external' && (!hint || matches(d.name, hint)));
+  const change = action('open-settings', 'Cambiar origen del audio');
 
   if (t.software !== 'obs') {
-    if (!inSystem) return result(missingStatus, `No se detecta ${label}. Conéctalo; se revisará solo.`, { actions: [action('retry', 'Reintentar', true)] });
-    return result('ok', `${label} está conectado a la computadora.`, { actions: [action('retry', 'Reintentar')] });
+    if (wantsComputer) return result('warn', `Usas el micrófono de la computadora. ${COMPUTER_MIC_NOTE}`, { actions: [change] });
+    if (!externals.length) {
+      return result('pending', 'No hay ninguna entrada de audio externa conectada (consola, interfaz o micrófono USB). Conéctala; se revisa sola.', {
+        actions: [action('retry', 'Reintentar', true), change],
+      });
+    }
+    return result('ok', `Entrada externa conectada: ${externals.map((d) => d.name).join(', ')}. Elígela en tu programa de transmisión.`, { actions: [action('retry', 'Reintentar'), change] });
   }
 
   try {
     await ensureObs(ctx);
-    const inputs = await obsApi.audioInputs(obs);
-    const using = hint ? inputs.find((i) => matches(i.deviceName, hint)) : inputs.find((i) => !i.isDefault) || inputs[0];
-    const defaults = inputs.filter((i) => i.isDefault && !i.muted && i !== using);
+    const inputs = audioCore.classifyInputs(await obsApi.audioInputs(obs), devices);
+    const active = inputs.filter((i) => !i.muted);
+    const fromComputer = active.filter((i) => i.origin === 'computer');
+    const outside = active.filter((i) => i.origin !== 'computer');
+    const using = wantsComputer ? fromComputer[0] || active[0] : hint ? outside.find((i) => matches(i.resolvedName, hint)) : outside[0];
     const details = [
-      { label: 'Dispositivo', value: hint ? (inSystem ? `${hint} conectado` : `${hint} no detectado`) : 'Sin nombre configurado', status: inSystem ? 'ok' : 'error' },
-      { label: 'Fuente en OBS', value: using ? `${using.inputName} (${using.deviceName || 'por defecto'})` : 'Ninguna lo usa', status: using ? (using.muted ? 'error' : 'ok') : 'error' },
+      ...inputs.map((i) => ({
+        label: `Fuente “${i.inputName}”`,
+        value: `${i.resolvedName} · ${audioCore.ORIGIN_LABEL[i.origin]}${i.muted ? ' · silenciada' : ''}`,
+        status: i.muted ? undefined : i.origin === 'computer' && !wantsComputer ? 'warn' : 'ok',
+      })),
+      { label: 'Entradas externas conectadas', value: externals.map((d) => d.name).join(', ') || 'Ninguna' },
     ];
-    if (defaults.length) details.push({ label: 'También entra', value: defaults.map((d) => `${d.inputName} (micrófono por defecto)`).join(', '), status: 'warn' });
+    if (!inputs.length) details.unshift({ label: 'Fuentes de audio en OBS', value: 'Ninguna', status: 'error' });
 
-    if (!inSystem && !using) {
-      return result(missingStatus, `No se detecta ${label}. Si aún no está conectado, se revisará solo cuando lo conectes.`, {
-        details, actions: [action('retry', 'Reintentar', true), action('skip', 'Omitir por ahora')],
+    if (wantsComputer) {
+      if (!using) return result('error', 'OBS no tiene ninguna fuente de audio activa.', { details, actions: [action('retry', 'Reintentar', true), change] });
+    } else if (!using) {
+      const actions = externals.slice(0, 3).map((d, i) => action(`use-device:${d.name}`, `Usar ${d.name} en OBS`, i === 0));
+      actions.push(action('retry', 'Reintentar'), action('use-computer', 'Usar el micrófono de la computadora'), change);
+      if (externals.length) {
+        return result('error', fromComputer.length ? 'OBS está tomando el audio del micrófono de la computadora, no de la entrada externa.' : 'Ninguna fuente de OBS usa la entrada externa.', { details, actions });
+      }
+      return result('pending', 'No hay ninguna entrada de audio externa conectada (consola, interfaz o micrófono USB). Conéctala; se revisa sola.', {
+        details, help: 'Si esta vez no hay consola, puedes usar el micrófono de la computadora a propósito.', actions,
       });
     }
-    if (!using) {
-      return result('error', `OBS no está tomando el audio de ${label}.`, { details, actions: [action('use-device', `Usar ${hint} en OBS`, true), action('retry', 'Reintentar')] });
-    }
-    if (using.muted) return result('error', `La fuente “${using.inputName}” está silenciada en OBS.`, { details, actions: [action('unmute', 'Quitar silencio', true)] });
 
     if (ctx.auto && !light) ctx.state.audioLevel = { input: using.inputName, db: (await obsApi.measureLevels(obs, 3000))[using.inputName] };
     const level = ctx.state.audioLevel?.input === using.inputName ? ctx.state.audioLevel.db : null;
     if (level !== null && level !== undefined) {
       details.push({ label: 'Nivel de audio', value: Number.isFinite(level) ? `${level} dB` : 'Sin señal', status: level > SIGNAL_DB ? 'ok' : 'warn', meter: Number.isFinite(level) ? level : -100 });
     }
-    const actions = [action('test-signal', 'Probar señal (5 s)', level === null), action('retry', 'Reintentar')];
-    if (defaults.length) actions.unshift(action('mute-default', 'Silenciar el micrófono por defecto', true));
-    if (defaults.length) return result('warn', `OBS toma ${label}, pero también el micrófono por defecto de la computadora.`, { details, actions });
-    if (level === null) return result('confirm', `OBS toma ${label}. Habla o toca algo y prueba la señal.`, { details, actions });
-    if (level <= SIGNAL_DB) return result('warn', `No llega sonido de ${label}. Revisa que la consola esté encendida y con volumen, y prueba otra vez.`, { details, actions });
-    return result('ok', `OBS recibe audio de ${label}.`, { details, actions });
+    const actions = [action('test-signal', 'Probar señal (5 s)', level === null), action('retry', 'Reintentar'), change];
+    const name = `${using.resolvedName}`;
+    if (wantsComputer) {
+      if (using.origin !== 'computer') {
+        return result(level === null || level > SIGNAL_DB ? 'ok' : 'warn', `Elegiste el micrófono de la computadora, pero OBS toma una entrada externa (${name}), que suena mejor.`, { details, actions });
+      }
+      return result('warn', `Usas el micrófono de la computadora (${name}). ${COMPUTER_MIC_NOTE}`, { details, actions });
+    }
+    if (fromComputer.length) {
+      actions.unshift(action('mute-computer', 'Silenciar el micrófono de la computadora', true));
+      return result('warn', `OBS toma ${name}, pero también el micrófono de la computadora (“${fromComputer.map((i) => i.inputName).join('”, “')}”).`, { details, actions });
+    }
+    if (level === null) return result('confirm', `OBS toma el audio de ${name}. Habla o toca algo y prueba la señal.`, { details, actions });
+    if (level <= SIGNAL_DB) return result('warn', `No llega sonido de ${name}. Revisa que la consola esté encendida y con volumen, y prueba otra vez.`, { details, actions });
+    return result('ok', `OBS recibe audio de ${name}, no del micrófono de la computadora.`, { details, actions });
   } catch (err) {
     return obsDown(err);
   }
@@ -377,6 +420,14 @@ async function ndiSource(ctx, hint, inputs, onNetwork) {
   return { status: 'ok', value: `“${input.inputName}” recibe imagen`, input, preview: sig.preview };
 }
 
+// Sin nombre configurado, la fuente de letras se reconoce por cómo suele llamarse.
+const LYRICS_GUESS = /letra|lyric|holyrics|propresenter|easyworship|openlp|biblia|vers[ií]culo/i;
+function lyricsHint(t, n) {
+  if (t.lyrics.source) return t.lyrics.source;
+  const input = n.inputs.find((i) => LYRICS_GUESS.test(i.inputName) || LYRICS_GUESS.test(i.ndiName));
+  return input ? input.inputName : n.onNetwork.find((x) => LYRICS_GUESS.test(x)) || 'Letras';
+}
+
 const ndiList = (inputs) => inputs.map((i) => `${i.inputName} (${i.ndiName || 'sin emisor'})`).join(', ') || 'Ninguna';
 
 async function ndiContext() {
@@ -387,10 +438,10 @@ async function ndiContext() {
 }
 
 async function lyrics(ctx) {
-  const hint = ctx.settings.transmission.lyrics.source || 'Holyrics';
   try {
     await ensureObs(ctx);
     const n = await ndiContext();
+    const hint = lyricsHint(ctx.settings.transmission, n);
     if (!n.hasNdi) return result('error', 'OBS no tiene NDI. Instala el plugin DistroAV y el NDI Runtime.', { actions: [action('install-ndi', 'Descargar DistroAV', true)] });
     const r = await ndiSource(ctx, hint, n.inputs, n.onNetwork);
     const details = [
@@ -531,7 +582,7 @@ async function title(ctx) {
     }
   }
   if (ctx.auto) ctx.electron.clipboard.writeText(text);
-  return result('ok', ctx.auto ? `Título listo y copiado para pegarlo en ${DESTINATION[s.transmission.destination]}.` : `Título de ${service.name} listo.`, { details, actions, service: service.id });
+  return result('ok', ctx.auto ? `Título listo y copiado para pegarlo en ${DESTINATION[s.transmission.destination] || 'tu transmisión'}.` : `Título de ${service.name} listo.`, { details, actions, service: service.id });
 }
 
 /* ------------------------------------------------------------------ */
@@ -640,14 +691,19 @@ async function run(id, ctx, opts = {}) {
 /** Acciones de los botones. Devuelve true si después hay que volver a revisar. */
 async function act(id, actionId, ctx) {
   const t = ctx.settings.transmission;
-  const [name, arg] = actionId.split(':');
+  // "use-device:Nombre" → acción y argumento (el nombre puede llevar dos puntos).
+  const cut = actionId.indexOf(':');
+  const name = cut < 0 ? actionId : actionId.slice(0, cut);
+  const arg = cut < 0 ? undefined : actionId.slice(cut + 1);
   switch (name) {
     case 'retry':
     case 'test-signal':
       if (name === 'test-signal') {
         await ensureObs(ctx);
-        const inputs = await obsApi.audioInputs(obs);
-        const using = t.audio.device ? inputs.find((i) => matches(i.deviceName, t.audio.device)) : inputs.find((i) => !i.isDefault) || inputs[0];
+        const inputs = audioCore.classifyInputs(await obsApi.audioInputs(obs), await systemAudio(ctx)).filter((i) => !i.muted);
+        const using = t.audio.source === 'computer'
+          ? inputs[0]
+          : (t.audio.device ? inputs.find((i) => matches(i.resolvedName, t.audio.device)) : null) || inputs.find((i) => i.origin !== 'computer');
         if (using) ctx.state.audioLevel = { input: using.inputName, db: (await obsApi.measureLevels(obs, 5000))[using.inputName] };
       }
       if (id === 'internet') ctx.state.speed = null;
@@ -692,11 +748,7 @@ async function act(id, actionId, ctx) {
     case 'open-profile': {
       const url = name === 'open-profile' ? t.pageUrl : browser.livePageFor(t.destination, t.pageUrl);
       if (name === 'go-page' && browser.canRead(t.browser)) await browser.goTo(t.browser, url);
-      else {
-        const st = await apps.status(t.browser === 'none' ? 'safari' : t.browser);
-        if (st.path) await apps.open(st.path, url);
-        else await ctx.electron.shell.openExternal(url);
-      }
+      else await openInBrowser(ctx, t.browser, url);
       await new Promise((r) => setTimeout(r, 1500));
       return true;
     }
@@ -722,23 +774,20 @@ async function act(id, actionId, ctx) {
       }, 60000);
       return false;
     case 'use-device':
-      await useAudioDevice(ctx);
+      await useAudioDevice(ctx, arg);
       return true;
-    case 'mute-default': {
+    case 'mute-computer': {
       await ensureObs(ctx);
-      const inputs = await obsApi.audioInputs(obs);
-      for (const i of inputs.filter((x) => x.isDefault && !x.muted && !matches(x.deviceName, t.audio.device))) {
+      const inputs = audioCore.classifyInputs(await obsApi.audioInputs(obs), await systemAudio(ctx));
+      for (const i of inputs.filter((x) => x.origin === 'computer' && !x.muted)) {
         await obs.request('SetInputMute', { inputName: i.inputName, inputMuted: true });
       }
       return true;
     }
-    case 'unmute': {
-      await ensureObs(ctx);
-      const inputs = await obsApi.audioInputs(obs);
-      const using = inputs.find((i) => matches(i.deviceName, t.audio.device));
-      if (using) await obs.request('SetInputMute', { inputName: using.inputName, inputMuted: false });
+    case 'use-computer':
+      // A propósito: queda guardado y la revisión solo avisa.
+      ctx.saveSettings({ transmission: { audio: { source: 'computer' } } });
       return true;
-    }
     case 'create-ndi':
       await createNdiInput(ctx, arg);
       return true;
@@ -767,30 +816,23 @@ async function act(id, actionId, ctx) {
   }
 }
 
-/** Pone el dispositivo de audio configurado en una fuente de OBS (la de Mic/Aux o una nueva). */
-async function useAudioDevice(ctx) {
-  const hint = ctx.settings.transmission.audio.device;
+/** Pone el dispositivo de audio `deviceName` en una fuente de OBS: la que usa el micrófono de la computadora, u otra nueva. */
+async function useAudioDevice(ctx, deviceName) {
   await ensureObs(ctx);
-  const inputs = await obsApi.audioInputs(obs);
+  const inputs = audioCore.classifyInputs(await obsApi.audioInputs(obs), await systemAudio(ctx));
   const kind = IS_MAC ? 'coreaudio_input_capture' : 'wasapi_input_capture';
-  const probe = inputs[0];
-  if (probe) {
-    const devices = await obsApi.audioDevices(obs, probe.inputName);
-    const dev = devices.find((d) => matches(d.name, hint));
-    if (!dev) throw new Error(`OBS no ve ningún dispositivo llamado “${hint}”. ¿Está conectado?`);
-    // Se reutiliza la fuente que usa el micrófono por defecto (normalmente "Mic/Aux").
-    const target = inputs.find((i) => i.isDefault) || probe;
-    await obs.request('SetInputSettings', { inputName: target.inputName, inputSettings: { device_id: dev.id }, overlay: true });
-    await obs.request('SetInputMute', { inputName: target.inputName, inputMuted: false });
-    return;
+  let target = inputs.find((i) => i.origin === 'computer') || inputs[0];
+  if (!target) {
+    // No hay ninguna fuente de audio: se crea en la escena actual.
+    const { currentProgramSceneName } = await obs.request('GetSceneList');
+    await obs.request('CreateInput', { sceneName: currentProgramSceneName, inputName: 'Audio', inputKind: kind, inputSettings: {} });
+    target = { inputName: 'Audio' };
   }
-  // No hay ninguna fuente de audio: se crea en la escena actual y se le asigna el dispositivo.
-  const { currentProgramSceneName } = await obs.request('GetSceneList');
-  const inputName = `Audio ${hint}`;
-  await obs.request('CreateInput', { sceneName: currentProgramSceneName, inputName, inputKind: kind, inputSettings: {} });
-  const devices = await obsApi.audioDevices(obs, inputName);
-  const dev = devices.find((d) => matches(d.name, hint));
-  if (dev) await obs.request('SetInputSettings', { inputName, inputSettings: { device_id: dev.id }, overlay: true });
+  const devices = await obsApi.audioDevices(obs, target.inputName);
+  const dev = devices.find((d) => d.name === deviceName) || devices.find((d) => matches(d.name, deviceName));
+  if (!dev) throw new Error(`OBS no ve el dispositivo “${deviceName}”. ¿Está conectado?`);
+  await obs.request('SetInputSettings', { inputName: target.inputName, inputSettings: { device_id: dev.id }, overlay: true });
+  await obs.request('SetInputMute', { inputName: target.inputName, inputMuted: false });
 }
 
 /** Crea en la escena actual una fuente NDI apuntando al emisor que coincide (letras o una cámara). */
@@ -798,9 +840,9 @@ async function createNdiInput(ctx, which) {
   await ensureObs(ctx);
   const t = ctx.settings.transmission;
   const cam = t.cameras.find((c) => c.id === which);
-  const hint = which === 'lyrics' ? t.lyrics.source || 'Holyrics' : cam.source || cam.name;
-  const inputName = which === 'lyrics' ? 'Letras (NDI)' : cam.name;
   const n = await ndiContext();
+  const hint = which === 'lyrics' ? lyricsHint(t, n) : cam.source || cam.name;
+  const inputName = which === 'lyrics' ? 'Letras (NDI)' : cam.name;
   const ndiName = n.onNetwork.find((x) => matches(x, hint));
   if (!ndiName) throw new Error(`No hay ningún emisor NDI llamado “${hint}” en la red.`);
   const { currentProgramSceneName } = await obs.request('GetSceneList');

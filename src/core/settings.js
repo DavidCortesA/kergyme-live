@@ -11,8 +11,8 @@ const CHOICES = {
   mode: ['transmission', 'screen'],
   software: ['obs', 'streamlabs', 'vmix', 'ecamm', 'other'],
   destination: ['facebook', 'youtube', 'custom'],
-  browser: ['safari', 'chrome', 'edge', 'firefox', 'none'],
-  audioType: ['usb-console', 'usb-mic', 'mixer', 'hdmi', 'builtin'],
+  browser: ['default', 'safari', 'chrome', 'edge', 'firefox', 'none'],
+  audioSource: ['external', 'computer'],
   cameraType: ['ndi', 'capture', 'webcam', 'switcher', 'ip'],
   presenter: ['holyrics', 'propresenter', 'easyworship', 'openlp', 'other'],
   outputRole: ['projector', 'tv', 'receiver', 'stage'],
@@ -31,21 +31,20 @@ function defaults() {
     computerName: '',
     transmission: {
       software: 'obs',
-      destination: 'facebook',
+      destination: null, // se elige en el asistente
       pageName: '',
       pageUrl: '',
       server: '', // solo para RTMP personalizado
-      browser: process.platform === 'darwin' ? 'safari' : 'chrome',
+      browser: null, // se elige en el asistente
       bitrateKbps: 6000,
-      audio: { type: 'usb-console', device: '', required: true },
+      // external: consola, interfaz o micrófono externo (se revisa que OBS no use el de la computadora)
+      // computer: el micrófono de la computadora, a propósito
+      audio: { source: 'external', device: '', required: true },
       cameras: [],
       lyrics: { enabled: false, source: '' },
       obs: { host: '127.0.0.1', port: 4455, scene: '', titleSource: '' },
     },
-    services: [
-      { id: 'domingo', name: 'Domingo', weekday: 0, title: '' },
-      { id: 'miercoles', name: 'Miércoles', weekday: 3, title: '' },
-    ],
+    services: [{ id: 'domingo', name: 'Domingo', weekday: 0, title: '' }],
     screen: {
       software: 'holyrics',
       outputs: [{ id: 'o1', role: 'projector', name: 'Proyector' }],
@@ -134,7 +133,8 @@ function sanitize(patch = {}) {
     set(o, 'bitrateKbps', int(t.bitrateKbps, 500, 50000));
     if (t.audio && typeof t.audio === 'object') {
       o.audio = {};
-      set(o.audio, 'type', pick(t.audio.type, CHOICES.audioType));
+      // Configuración anterior a 0.2: "builtin" era el micrófono de la computadora.
+      set(o.audio, 'source', pick(t.audio.source, CHOICES.audioSource) ?? (t.audio.type === 'builtin' ? 'computer' : t.audio.type ? 'external' : undefined));
       set(o.audio, 'device', text(t.audio.device, 80));
       set(o.audio, 'required', bool(t.audio.required));
     }

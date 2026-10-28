@@ -21,13 +21,14 @@ const OPTIONS = {
     ['other', 'Otro'],
   ],
   destination: [['facebook', 'Facebook Live'], ['youtube', 'YouTube Live'], ['custom', 'Servidor RTMP']],
-  browser: [['safari', 'Safari', null, 'darwin'], ['chrome', 'Google Chrome'], ['edge', 'Microsoft Edge'], ['firefox', 'Firefox'], ['none', 'Ninguno']],
-  audioType: [
-    ['usb-console', 'Consola o interfaz USB', 'MAONO, Focusrite, Behringer…'],
-    ['mixer', 'Mezcladora digital', 'XR18, X32, Yamaha…'],
-    ['usb-mic', 'Micrófono USB'],
-    ['hdmi', 'Audio de la capturadora'],
-    ['builtin', 'Micrófono de la computadora'],
+  browser: [
+    ['default', 'Navegador predeterminado', 'El que abre la computadora'],
+    ['safari', 'Safari', null, 'darwin'], ['chrome', 'Google Chrome'], ['edge', 'Microsoft Edge'], ['firefox', 'Firefox'],
+    ['none', 'No uso navegador'],
+  ],
+  audioSource: [
+    ['external', 'Entrada externa', 'Consola, interfaz, micrófono USB o capturadora'],
+    ['computer', 'Micrófono de la computadora'],
   ],
   cameraType: [
     ['ndi', 'Celular por NDI'],
@@ -154,7 +155,7 @@ const SECTIONS = {
     title: 'Tu equipo',
     lead: 'Para los títulos del servicio y para reconocer esta computadora.',
     render: (d) =>
-      field('Iglesia u organización', input('org', d.org, 'Montaña de Dios')) +
+      field('Iglesia u organización', input('org', d.org, 'Nombre de tu iglesia')) +
       field('Nombre de esta computadora', input('computerName', d.computerName, state.info.hostname), 'Ayuda a saber cuál es cuál cuando hay varias.'),
   },
   software: {
@@ -178,11 +179,14 @@ const SECTIONS = {
         : t.destination === 'youtube' ? 'En YouTube Studio: Transmitir → Clave de transmisión (elige una clave reutilizable).' : 'La que te dio tu servidor de transmisión.';
       return (
         field('Destino', chips('transmission.destination', 'destination', t.destination)) +
-        field(t.destination === 'youtube' ? 'Nombre del canal' : 'Nombre de la página', input('transmission.pageName', t.pageName, 'Montaña de Dios')) +
-        field(t.destination === 'youtube' ? 'Enlace del canal' : 'Enlace de la página', input('transmission.pageUrl', t.pageUrl, t.destination === 'youtube' ? 'youtube.com/@MontanadeDios' : 'facebook.com/MontanadeDios'),
-          'Se usa para revisar que el navegador esté en la página correcta.') +
+        (t.destination
+          ? field(t.destination === 'youtube' ? 'Nombre del canal' : 'Nombre de la página', input('transmission.pageName', t.pageName, t.destination === 'youtube' ? 'Nombre de tu canal' : 'Nombre de tu página')) +
+            field(t.destination === 'youtube' ? 'Enlace del canal' : t.destination === 'custom' ? 'Enlace del panel (opcional)' : 'Enlace de la página',
+              input('transmission.pageUrl', t.pageUrl, { youtube: 'youtube.com/@tu-canal', facebook: 'facebook.com/tu-pagina', custom: 'https://…' }[t.destination]),
+              'Se usa para revisar que el navegador esté en la página correcta.')
+          : '') +
         (t.destination === 'custom' ? field('Servidor RTMP', input('transmission.server', t.server, 'rtmp://servidor/live')) : '') +
-        (t.software === 'obs' ? secretField('streamKey', 'Clave de transmisión', 'Pega aquí la clave', keyHelp) : '') +
+        (t.software === 'obs' && t.destination ? secretField('streamKey', 'Clave de transmisión', 'Pega aquí la clave', keyHelp) : '') +
         (t.software === 'obs' ? field('Bitrate de video (kbps)', input('transmission.bitrateKbps', t.bitrateKbps, '6000', 'data-num inputmode="numeric"'), 'Se compara con la velocidad de subida. Facebook recomienda hasta 6000 kbps para 1080p.') : '')
       );
     },
@@ -195,16 +199,20 @@ const SECTIONS = {
   },
   audio: {
     title: 'Audio',
-    lead: 'De dónde entra el sonido. La app revisa que OBS lo tome de ahí y no del micrófono de la computadora.',
+    lead: 'De dónde entra el sonido de la transmisión. Lo normal es una entrada externa; la app revisa que no se cuele el micrófono de la computadora.',
     render: (d) => {
       const a = d.transmission.audio;
       const sugg = [...state.devices.audioinput, ...(state.obsScan?.audioDevices || [])];
+      if (a.source === 'computer') {
+        return (
+          field('Origen del audio', chips('transmission.audio.source', 'audioSource', a.source)) +
+          `<div class="help" style="margin-top:14px">${icon('alert')}<span>Con el micrófono de la computadora se oye el ambiente, con eco y a bajo volumen. La app no lo marcará como error, pero te lo recordará en el checklist. Úsalo solo si no hay consola o interfaz.</span></div>`
+        );
+      }
       return (
-        field('Tipo de entrada', chips('transmission.audio.type', 'audioType', a.type)) +
-        (a.type !== 'builtin'
-          ? field('Nombre del dispositivo', `${input('transmission.audio.device', a.device, 'MAONO', 'list="dl-audio"')}${datalist('dl-audio', sugg)}`,
-            'Basta con una parte del nombre, como aparece en el sistema (ej. <b>MAONO</b>).')
-          : '') +
+        field('Origen del audio', chips('transmission.audio.source', 'audioSource', a.source)) +
+        field('Dispositivo (opcional)', `${input('transmission.audio.device', a.device, 'Cualquiera que no sea el de la computadora', 'list="dl-audio"')}${datalist('dl-audio', sugg)}`,
+          'Déjalo vacío y la app acepta cualquier entrada externa. Escribe parte del nombre solo si hay varias y quieres una en particular.') +
         `<div class="field">${toggle('transmission.audio.required', a.required, 'El audio es obligatorio para empezar', 'Si lo apagas, la falta de audio no bloquea el checklist (por ejemplo, si la consola se conecta al final).')}</div>`
       );
     },
@@ -229,7 +237,7 @@ const SECTIONS = {
           state.obsScan?.ndiInputs?.length ? `Fuentes NDI en OBS: ${state.obsScan.ndiInputs.map(esc).join(', ')}. Escribe el nombre de la fuente o del emisor.` : '') +
         field('Agregar', `<div class="chips">${add}</div>`, 'Si usas un switcher (ATEM u otro módulo de cámaras), agrégalo como una sola cámara: llega a la computadora por USB.') +
         `<div class="field">${toggle('transmission.lyrics.enabled', t.lyrics.enabled, 'Letras y versículos por NDI', 'Holyrics o ProPresenter en otra computadora envían las letras a OBS por NDI.')}</div>` +
-        (t.lyrics.enabled ? field('Nombre del emisor NDI de letras', `${input('transmission.lyrics.source', t.lyrics.source, 'Holyrics', 'list="dl-cam-ndi"')}`, 'Basta con una parte del nombre, como aparece en la lista de NDI de OBS.') : '')
+        (t.lyrics.enabled ? field('Fuente NDI de letras (opcional)', `${input('transmission.lyrics.source', t.lyrics.source, 'Ej. Letras o Holyrics', 'list="dl-cam-ndi"')}`, 'El nombre de la fuente en OBS o del emisor NDI. Vacío: la app busca una que se llame “Letras”, “Holyrics”, “ProPresenter”…') : '')
       );
     },
   },
@@ -294,6 +302,17 @@ const SECTIONS = {
     render: (d) => field('Tema', chips('theme', 'theme', d.theme)),
   },
 };
+
+/** Lo que no se puede dejar sin elegir en cada paso (nada se da por hecho). */
+function missingChoice(step, d) {
+  const t = d.transmission;
+  if (step === 'destination') {
+    if (!t.destination) return 'Elige dónde transmiten.';
+    if (t.destination === 'custom' && !t.server) return 'Escribe la dirección del servidor RTMP.';
+  }
+  if (step === 'browser' && !t.browser) return 'Elige el navegador (o “No uso navegador”).';
+  return null;
+}
 
 const STEPS = {
   transmission: ['team', 'software', 'destination', 'browser', 'audio', 'cameras', 'services'],
@@ -451,6 +470,7 @@ function renderChecklist() {
         </button>
       </div>
     </div>
+    <div class="setup-bar">${icon('settings', 'sm')}<span>${esc(state.info.setup)}</span><button type="button" class="link-btn" data-nav="settings">Cambiar configuración</button></div>
     <div class="progress ${sum.ready ? 'ok' : ''}"><i style="width:${pct}%"></i></div>
     ${ready}
     <div class="check-list">${rows}</div>`;
@@ -505,7 +525,8 @@ function renderSettings() {
   const d = state.draft;
   const ids = ['general', 'team', ...STEPS[d.mode].filter((x) => x !== 'team')];
   return `<div class="settings-page">
-    <div class="page-head"><div><h1>Configuración</h1><p>Modo ${d.mode === 'transmission' ? 'Transmisión' : 'Pantalla'} · ${esc(d.computerName || state.info.hostname)} · Kerygma Live ${esc(state.info.version)}</p></div></div>
+    <div class="page-head"><div><h1>Configuración</h1><p>Modo ${d.mode === 'transmission' ? 'Transmisión' : 'Pantalla'} · ${esc(d.computerName || state.info.hostname)} · Kerygma Live ${esc(state.info.version)}</p>
+      <p>Se guarda en esta computadora y se usa cada vez que abres la app. Cámbiala cuando quieras: navegador, destino, audio, cámaras…</p></div></div>
     ${ids.map((id) => `<section class="panel"><h2>${esc(SECTIONS[id].title)}</h2>${SECTIONS[id].lead ? `<p>${esc(SECTIONS[id].lead)}</p>` : ''}${SECTIONS[id].render(d)}</section>`).join('')}
     ${d.mode === 'transmission' && d.transmission.software === 'obs' ? `<section class="panel"><h2>OBS en otra computadora</h2><p>Solo si OBS no está en esta computadora. En la misma, la app lee la conexión del propio OBS.</p>
       ${field('Dirección', `<div class="input-row">${input('transmission.obs.host', d.transmission.obs.host, '127.0.0.1')}${input('transmission.obs.port', d.transmission.obs.port, '4455', 'data-num style="max-width:110px"')}</div>`)}
@@ -579,6 +600,11 @@ async function runAction(checkId, actionId) {
     return;
   }
   const res = await api.action(checkId, actionId, state.devices);
+  if (actionId === 'use-computer') {
+    await reload();
+    render();
+    toast('Guardado: esta computadora usa su propio micrófono a propósito.');
+  }
   if (res?.error) toast(res.error, 'error');
   else if (actionId === 'copy-key') toast('Clave copiada. Se borra del portapapeles en 1 minuto.');
   else if (actionId === 'copy-title') toast('Título copiado.');
@@ -678,8 +704,12 @@ document.addEventListener('click', async (e) => {
     if (ds.wizard === 'back') {
       if (state.step === 0) state.view = 'home';
       else state.step--;
-    } else if (state.step < steps.length - 1) state.step++;
-    else return finishSetup();
+    } else {
+      const missing = missingChoice(steps[state.step], state.draft);
+      if (missing) return toast(missing, 'error');
+      if (state.step < steps.length - 1) state.step++;
+      else return finishSetup();
+    }
     render();
     return;
   }
@@ -733,6 +763,8 @@ document.addEventListener('click', async (e) => {
     return;
   }
   if (ds.saveSettings !== undefined) {
+    const missing = STEPS[state.draft.mode].map((st) => missingChoice(st, state.draft)).find(Boolean);
+    if (missing) return toast(missing, 'error');
     await saveSecrets();
     await reload(await api.saveSettings(state.draft));
     state.view = 'checklist';
