@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'" />
+  <title>Prueba de imagen</title>
+  <link rel="stylesheet" href="pattern.css" />
+</head>
+<body>
+  <!-- Patrón para ubicar cada pantalla: barras de color, cuadrícula y el número de la pantalla. -->
+  <div class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <div class="grid"></div>
+  <div class="card">
+    <div class="num" id="num"></div>
+    <div class="label" id="label"></div>
+    <div class="res" id="res"></div>
+    <div class="hint">Haz clic o pulsa Esc para cerrar · se cierra solo en 15 s</div>
+  </div>
+  <div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div>
+  <script src="pattern.js"></script>
+</body>
+</html>

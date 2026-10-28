@@ -1,0 +1,26 @@
+html, body { margin: 0; height: 100%; overflow: hidden; cursor: pointer; background: #0e0e10; color: #f4f4f5;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", Roboto, sans-serif; }
+.bars { position: absolute; inset: 0 0 auto 0; height: 22%; display: flex; }
+.bars i { flex: 1; }
+.bars i:nth-child(1) { background: #c0c0c0; }
+.bars i:nth-child(2) { background: #c0c000; }
+.bars i:nth-child(3) { background: #00c0c0; }
+.bars i:nth-child(4) { background: #00c000; }
+.bars i:nth-child(5) { background: #c000c0; }
+.bars i:nth-child(6) { background: #c00000; }
+.bars i:nth-child(7) { background: #0000c0; }
+.grid { position: absolute; inset: 22% 0 0 0;
+  background-image: linear-gradient(rgba(255,255,255,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.07) 1px, transparent 1px);
+  background-size: 5vw 5vw; background-position: center; }
+.card { position: absolute; left: 50%; top: 58%; transform: translate(-50%, -50%); text-align: center;
+  padding: 3vh 5vw; border-radius: 3vh; background: rgba(21,21,24,.92); border: 2px solid #ff6a3d; box-shadow: 0 2vh 6vh rgba(0,0,0,.6); }
+.num { font-size: 22vh; font-weight: 800; line-height: 1; color: #ff6a3d; }
+.label { margin-top: 1.5vh; font-size: 6vh; font-weight: 700; }
+.res { margin-top: 1vh; font-size: 3.2vh; color: #a3a5ae; }
+.hint { margin-top: 2.5vh; font-size: 2.2vh; color: #6e707a; }
+/* Esquinas: si no se ven las cuatro, la imagen está recortada (overscan del proyector o TV). */
+.corner { position: absolute; width: 6vh; height: 6vh; border: 0.8vh solid #ff6a3d; }
+.tl { left: 0; top: 0; border-right: 0; border-bottom: 0; }
+.tr { right: 0; top: 0; border-left: 0; border-bottom: 0; }
+.bl { left: 0; bottom: 0; border-right: 0; border-top: 0; }
+.br { right: 0; bottom: 0; border-left: 0; border-top: 0; }

@@ -1,0 +1,91 @@
+# Compila Kerygma Live en cada sistema y, al subir una etiqueta "v*"
+# (git tag v1.0.0 && git push origin v1.0.0), publica un GitHub Release con cada
+# instalador como descarga independiente. Lanzado a mano desde Actions, solo compila
+# y deja cada versión como un artifact separado.
+name: Build & Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+          - os: macos-latest
+            arch: arm64
+            label: Apple-Silicon
+          - os: macos-latest
+            arch: x64
+            label: Intel
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Pruebas sin conexión
+        run: npm test
+
+      - name: Empaquetar Windows
+        if: runner.os == 'Windows'
+        run: npx electron-builder --win --x64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      # El .dmg lleva el tipo de Mac (Apple-Silicon / Intel) en lugar de arm64 / x64.
+      - name: Empaquetar Mac
+        if: runner.os == 'macOS'
+        run: npx electron-builder --mac --${{ matrix.arch }} --publish never "-c.dmg.artifactName=Kerygma-Live-\${version}-Mac-${{ matrix.label }}.\${ext}"
+
+      - name: Subir instalador de Windows
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kerygma Live - Windows Instalador
+          path: dist/Kerygma-Live-*-Windows-Instalador.exe
+          if-no-files-found: error
+
+      - name: Subir versión portable de Windows
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kerygma Live - Windows Portable
+          path: dist/Kerygma-Live-*-Windows-Portable.exe
+          if-no-files-found: error
+
+      - name: Subir instalador de Mac
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kerygma Live - Mac ${{ matrix.label }}
+          path: dist/Kerygma-Live-*-Mac-${{ matrix.label }}.dmg
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: instaladores
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Kerygma Live ${{ github.ref_name }}
+          generate_release_notes: true
+          files: instaladores/*

@@ -1,0 +1,94 @@
+{
+  "name": "kerygma-live",
+  "productName": "Kerygma Live",
+  "version": "0.1.0",
+  "description": "Prepara y valida la transmisión en vivo y las pantallas antes del servicio. Para Windows y macOS; hermano de Kerygma Converter y Kerygma Downloader.",
+  "main": "main.js",
+  "author": "Kerygma",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "icon": "electron scripts/make-icon.js",
+    "screenshot": "electron scripts/screenshot.js",
+    "test": "node scripts/smoke-test.js",
+    "dist:mac": "electron-builder --mac --x64 --arm64 --publish never",
+    "dist:win": "electron-builder --win --x64 --publish never",
+    "dist": "npm run dist:mac && npm run dist:win"
+  },
+  "devDependencies": {
+    "electron": "^45.0.0",
+    "electron-builder": "^26.0.0",
+    "ws": "^8.18.0"
+  },
+  "build": {
+    "appId": "org.kerygma.live",
+    "productName": "Kerygma Live",
+    "copyright": "Kerygma",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "package.json"
+    ],
+    "artifactName": "Kerygma-Live-${version}-${os}-${arch}.${ext}",
+    "mac": {
+      "category": "public.app-category.video",
+      "icon": "build/icon-mac.png",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "target": [
+        "dmg"
+      ],
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Kerygma Live mide la señal de la entrada de audio para comprobar que llega sonido.",
+        "NSCameraUsageDescription": "Kerygma Live muestra la imagen de las cámaras y capturadoras conectadas para comprobar que llega video.",
+        "NSAppleEventsUsageDescription": "Kerygma Live revisa y abre la página de transmisión en tu navegador.",
+        "NSCameraUseContinuityCameraDeviceType": true
+      }
+    },
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "Kerygma-Live-${version}-Windows-Portable.${ext}"
+    },
+    "afterPack": "scripts/after-pack.js",
+    "dmg": {
+      "title": "Kerygma Live",
+      "artifactName": "Kerygma-Live-${version}-Mac-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "language": "3082",
+      "installerLanguages": [
+        "es_ES"
+      ],
+      "menuCategory": "Kerygma Live",
+      "shortcutName": "Kerygma Live",
+      "uninstallDisplayName": "Kerygma Live",
+      "deleteAppDataOnUninstall": true,
+      "include": "build/installer.nsh",
+      "artifactName": "Kerygma-Live-${version}-Windows-Instalador.${ext}"
+    }
+  }
+}
