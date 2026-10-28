@@ -18,6 +18,8 @@ const displaysCore = require('../core/displays');
 const { DESTINATION, BROWSER, PRESENTER, OUTPUT_ROLE, CAMERA_TYPE, isNdiCamera, serviceFor, serviceTitle } = require('../core/checklist');
 
 const IS_MAC = process.platform === 'darwin';
+// Por encima de esto hay sonido; un micrófono abierto en silencio ronda los -48 dB.
+const SIGNAL_DB = -45;
 const obs = new obsApi.ObsClient();
 const { matches } = obsApi;
 
@@ -38,6 +40,20 @@ function obsConnection(ctx) {
     return { host: '127.0.0.1', port: ws.exists ? ws.port : cfg.port, password: ws.authRequired ? ws.password : '', file: ws };
   }
   return { host: cfg.host, port: cfg.port, password: ctx.secrets.get('obsPassword'), file: null };
+}
+
+/** Tras abrir OBS, su servidor WebSocket tarda unos segundos más que la ventana en aceptar conexiones. */
+async function waitForObs(ctx, ms = 20000) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    try {
+      await ensureObs(ctx);
+      return true;
+    } catch {
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+  return false;
 }
 
 async function ensureObs(ctx) {
@@ -134,7 +150,7 @@ async function presenterOrSoftware(ctx, id, { light = false } = {}) {
     if (id === 'obs' && isLocalHost(ctx.settings.transmission.obs.host) && !obsConfig.readWebsocket().enabled) obsConfig.enableWebsocket();
     await apps.open(st.path);
     await apps.waitRunning(id, st.path);
-    if (id === 'obs') await new Promise((r) => setTimeout(r, 2500)); // el servidor WebSocket arranca después de la ventana
+    if (id === 'obs') await waitForObs(ctx);
     st = await apps.status(id);
   }
   const details = [{ label: 'Ubicación', value: st.path }];
@@ -302,7 +318,8 @@ async function audio(ctx, { light = false } = {}) {
   const t = ctx.settings.transmission;
   const hint = t.audio.device;
   const label = hint || 'la entrada de audio';
-  const missingStatus = t.audio.required ? 'pending' : 'skipped';
+  // Pendiente (no omitido) para que se siga revisando solo; si no es obligatorio, no bloquea.
+  const missingStatus = 'pending';
   const inSystem = hint ? await systemHas(ctx, 'audioinput', hint) : true;
 
   if (t.software !== 'obs') {
@@ -334,13 +351,13 @@ async function audio(ctx, { light = false } = {}) {
     if (ctx.auto && !light) ctx.state.audioLevel = { input: using.inputName, db: (await obsApi.measureLevels(obs, 3000))[using.inputName] };
     const level = ctx.state.audioLevel?.input === using.inputName ? ctx.state.audioLevel.db : null;
     if (level !== null && level !== undefined) {
-      details.push({ label: 'Nivel de audio', value: Number.isFinite(level) ? `${level} dB` : 'Sin señal', status: level > -50 ? 'ok' : 'warn', meter: Number.isFinite(level) ? level : -100 });
+      details.push({ label: 'Nivel de audio', value: Number.isFinite(level) ? `${level} dB` : 'Sin señal', status: level > SIGNAL_DB ? 'ok' : 'warn', meter: Number.isFinite(level) ? level : -100 });
     }
     const actions = [action('test-signal', 'Probar señal (5 s)', level === null), action('retry', 'Reintentar')];
     if (defaults.length) actions.unshift(action('mute-default', 'Silenciar el micrófono por defecto', true));
     if (defaults.length) return result('warn', `OBS toma ${label}, pero también el micrófono por defecto de la computadora.`, { details, actions });
     if (level === null) return result('confirm', `OBS toma ${label}. Habla o toca algo y prueba la señal.`, { details, actions });
-    if (level <= -50) return result('warn', `No llega sonido de ${label}. Revisa que la consola esté encendida y con volumen, y prueba otra vez.`, { details, actions });
+    if (level <= SIGNAL_DB) return result('warn', `No llega sonido de ${label}. Revisa que la consola esté encendida y con volumen, y prueba otra vez.`, { details, actions });
     return result('ok', `OBS recibe audio de ${label}.`, { details, actions });
   } catch (err) {
     return obsDown(err);
@@ -360,6 +377,8 @@ async function ndiSource(ctx, hint, inputs, onNetwork) {
   return { status: 'ok', value: `“${input.inputName}” recibe imagen`, input, preview: sig.preview };
 }
 
+const ndiList = (inputs) => inputs.map((i) => `${i.inputName} (${i.ndiName || 'sin emisor'})`).join(', ') || 'Ninguna';
+
 async function ndiContext() {
   const inputs = await obsApi.ndiInputs(obs);
   const onNetwork = inputs.length ? await obsApi.ndiNetworkSources(obs, inputs[0].inputName) : [];
@@ -374,14 +393,21 @@ async function lyrics(ctx) {
     const n = await ndiContext();
     if (!n.hasNdi) return result('error', 'OBS no tiene NDI. Instala el plugin DistroAV y el NDI Runtime.', { actions: [action('install-ndi', 'Descargar DistroAV', true)] });
     const r = await ndiSource(ctx, hint, n.inputs, n.onNetwork);
-    const details = [{ label: 'Fuente', value: r.value, status: r.status }, { label: 'Emisores NDI en la red', value: n.onNetwork.join(', ') || 'Ninguno' }];
+    const details = [
+      { label: 'Fuente', value: r.value, status: r.status },
+      { label: 'Fuentes NDI en OBS', value: ndiList(n.inputs) },
+      { label: 'Emisores NDI en la red', value: n.onNetwork.join(', ') || 'Ninguno' },
+    ];
     const actions = [action('retry', 'Reintentar', r.status !== 'ok')];
     if (r.canCreate) actions.unshift(action('create-ndi:lyrics', 'Crear la fuente en OBS', true));
+    else if (r.status === 'error') actions.push(action('open-settings', 'Cambiar el nombre'));
     const msg = {
-      ok: 'Llegan las letras y versículos de Holyrics.',
-      warn: 'La fuente de letras llega en negro: en Holyrics revisa que haya algo proyectado o activa el fondo.',
-      pending: 'La computadora de Holyrics no está enviando NDI. ¿Está encendida, en la misma red y con NDI activado?',
-      error: r.canCreate ? 'Holyrics está en la red, pero OBS no tiene su fuente.' : `No hay fuente NDI de ${hint} en OBS.`,
+      ok: `Llegan las letras y versículos (“${r.input?.inputName}”).`,
+      warn: 'La fuente de letras llega en negro: revisa que haya algo proyectado o activa el fondo en el programa de letras.',
+      pending: `La computadora de las letras no está enviando NDI (“${r.input?.ndiName}”). ¿Está encendida, en la misma red y con la salida NDI activada?`,
+      error: r.canCreate
+        ? 'El emisor de letras está en la red, pero OBS no tiene su fuente.'
+        : `Ninguna fuente NDI de OBS se llama “${hint}”.${n.inputs.length ? ' Pon en Configuración el nombre de la fuente de letras (está en la lista de abajo).' : ''}`,
     }[r.status];
     return result(r.status === 'pending' ? 'error' : r.status, msg, { details, actions, preview: r.preview });
   } catch (err) {
@@ -431,6 +457,7 @@ async function cameras(ctx) {
         details.push({ label: cam.name, value, status });
       }
     }
+    if (n && details.some((d) => d.status === 'error' && !d.canCreate)) details.push({ label: 'Fuentes NDI en OBS', value: ndiList(n.inputs) });
     const missing = details.filter((d) => d.status === 'pending' || d.status === 'error').length;
     const actions = [action('retry', 'Revisar de nuevo', missing > 0)];
     for (const d of details.filter((x) => x.canCreate)) actions.unshift(action(`create-ndi:${d.camId}`, `Crear fuente de ${d.label}`));
@@ -649,7 +676,7 @@ async function act(id, actionId, ctx) {
       if (st.path) {
         await apps.open(st.path);
         await apps.waitRunning(sw, st.path, 15000);
-        if (sw === 'obs') await new Promise((r) => setTimeout(r, 2500));
+        if (sw === 'obs') await waitForObs(ctx);
       }
       ctx.state.obsInfo = null;
       return true;

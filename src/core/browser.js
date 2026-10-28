@@ -42,15 +42,24 @@ function currentUrl(browser) {
 end tell`);
 }
 
-/** Lleva la pestaña al frente a `url` (o abre una ventana si no hay). */
+/** Abre `url` en una pestaña nueva al frente (no reemplaza lo que el operador tenga abierto). */
 function goTo(browser, url) {
   const b = SCRIPTABLE[browser];
-  return osascript(`tell application ${asString(b.app)}
+  const u = asString(url);
+  if (browser === 'safari') {
+    return osascript(`tell application "Safari"
   activate
   if (count of windows) is 0 then
-    make new document
+    make new document with properties {URL:${u}}
+  else
+    tell front window to set current tab to (make new tab with properties {URL:${u}})
   end if
-  set URL of ${b.tab} of front window to ${asString(url)}
+end tell`);
+  }
+  return osascript(`tell application ${asString(b.app)}
+  activate
+  if (count of windows) is 0 then make new window
+  tell front window to make new tab with properties {URL:${u}}
 end tell`);
 }
 

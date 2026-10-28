@@ -225,7 +225,8 @@ const SECTIONS = {
       const add = options('cameraType').map(([v, label]) => `<button type="button" class="chip" data-add-camera="${v}">${icon('plus', 'sm')} ${esc(label)}</button>`).join('');
       return (
         field('Cámaras', `<div class="list-editor">${rows || '<p class="note">Sin cámaras todavía.</p>'}</div>
-          ${datalist('dl-cam-ndi', state.obsScan?.ndiNetwork || [])}${datalist('dl-cam-video', state.devices.videoinput)}`) +
+          ${datalist('dl-cam-ndi', [...(state.obsScan?.ndiInputs || []), ...(state.obsScan?.ndiNetwork || [])])}${datalist('dl-cam-video', state.devices.videoinput)}`,
+          state.obsScan?.ndiInputs?.length ? `Fuentes NDI en OBS: ${state.obsScan.ndiInputs.map(esc).join(', ')}. Escribe el nombre de la fuente o del emisor.` : '') +
         field('Agregar', `<div class="chips">${add}</div>`, 'Si usas un switcher (ATEM u otro módulo de cámaras), agrégalo como una sola cámara: llega a la computadora por USB.') +
         `<div class="field">${toggle('transmission.lyrics.enabled', t.lyrics.enabled, 'Letras y versículos por NDI', 'Holyrics o ProPresenter en otra computadora envían las letras a OBS por NDI.')}</div>` +
         (t.lyrics.enabled ? field('Nombre del emisor NDI de letras', `${input('transmission.lyrics.source', t.lyrics.source, 'Holyrics', 'list="dl-cam-ndi"')}`, 'Basta con una parte del nombre, como aparece en la lista de NDI de OBS.') : '')
@@ -545,7 +546,7 @@ async function quickCheck() {
 /** Revisa solas, cada pocos segundos, las que están pendientes o con error (cámaras que se conectan después, etc.). */
 let watching = false;
 setInterval(async () => {
-  if (watching || state.preparing || document.hidden || !['checklist', 'detail'].includes(state.view)) return;
+  if (watching || state.preparing || !['checklist', 'detail'].includes(state.view)) return;
   watching = true;
   try {
     for (const it of state.items) {
@@ -585,6 +586,7 @@ async function runAction(checkId, actionId) {
 }
 
 function openSettings() {
+  scanObsQuietly();
   state.draft = clone(state.settings);
   state.secretDraft = {};
   state.view = 'settings';
@@ -606,7 +608,19 @@ function confirmModal({ icon: ic, title, text, ok, cancel = 'Cancelar' }) {
   });
 }
 
+/** Lee de OBS (si está abierto) escenas, fuentes de texto y fuentes NDI para sugerir nombres. */
+function scanObsQuietly() {
+  if (!state.info.obsWebsocket.enabled) return;
+  api.scanObs().then((scan) => {
+    if (!scan.connected) return;
+    state.obsScan = scan;
+    // Sin interrumpir a quien está escribiendo.
+    if (['wizard', 'settings'].includes(state.view) && !document.activeElement?.matches('input, select')) render();
+  });
+}
+
 function startWizard(mode) {
+  scanObsQuietly();
   state.draft = clone(state.settings);
   state.draft.mode = mode;
   if (!state.draft.computerName) state.draft.computerName = state.info.hostname;

@@ -75,7 +75,13 @@ function fakeObs(password) {
       const fail = (code, comment) => ws.send(JSON.stringify({ op: 7, d: { requestType: d.requestType, requestId: d.requestId, requestStatus: { result: false, code, comment } } }));
       const rd = d.requestData || {};
       switch (d.requestType) {
-        case 'GetVersion': return ok({ obsVersion: '32.0.0', obsWebSocketVersion: '5.5.0' });
+        case 'GetVersion':
+          // Recién abierto, OBS responde "no está listo" a la primera petición.
+          if (!obs.warmedUp) {
+            obs.warmedUp = true;
+            return fail(207, 'OBS is not ready to perform the request.');
+          }
+          return ok({ obsVersion: '32.0.0', obsWebSocketVersion: '5.5.0' });
         case 'GetInputList': return ok({ inputs: Object.entries(obs.inputs).map(([inputName, i]) => ({ inputName, inputKind: i.kind })) });
         case 'GetInputSettings': return obs.inputs[rd.inputName] ? ok({ inputSettings: obs.inputs[rd.inputName].settings, inputKind: obs.inputs[rd.inputName].kind }) : fail(600, 'No source was found');
         case 'GetInputMute': return ok({ inputMuted: obs.inputs[rd.inputName].muted });
@@ -208,7 +214,7 @@ function fakeObs(password) {
     assert.ok(apps.CATALOG.obs && apps.CATALOG.holyrics && apps.CATALOG.propresenter);
   });
 
-  await test('OBS simulado: autenticación, audio MAONO, NDI, clave y medidores', async () => {
+  await test('OBS simulado: autenticación, OBS aún cargando, audio MAONO, NDI, clave y medidores', async () => {
     const { server, port, obs } = await fakeObs('clave-obs');
     const client = new obsApi.ObsClient();
     try {

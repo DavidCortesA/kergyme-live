@@ -124,7 +124,23 @@ class ObsClient {
     this.ws.send(JSON.stringify({ op, d }));
   }
 
-  request(requestType, requestData = {}, timeout = 8000) {
+  /**
+   * Recién abierto, OBS acepta la conexión antes de terminar de cargar las escenas y responde
+   * "no está listo" (207). Esas respuestas se reintentan durante unos segundos.
+   */
+  async request(requestType, requestData = {}, timeout = 8000) {
+    const until = Date.now() + 20000;
+    for (;;) {
+      try {
+        return await this.requestOnce(requestType, requestData, timeout);
+      } catch (err) {
+        if (err.code !== 'REQUEST_207' || Date.now() > until) throw err;
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+  }
+
+  requestOnce(requestType, requestData = {}, timeout = 8000) {
     if (!this.connected) return Promise.reject(new ObsError('NOT_CONNECTED', 'No hay conexión con OBS.'));
     const requestId = String(this.nextId++);
     return new Promise((resolve, reject) => {

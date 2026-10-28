@@ -199,6 +199,8 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // Que siga revisando lo pendiente aunque OBS u otra ventana la tape.
+      backgroundThrottling: false,
     },
   });
   mainWindow.loadFile(path.join(__dirname, 'src', 'renderer', 'index.html'));
@@ -314,6 +316,7 @@ ipcMain.handle('obs:scan', async () => {
       textSources: inputs.filter((i) => obsApi.TEXT_KINDS.includes(i.inputKind)).map((i) => i.inputName),
       audioDevices: audioDevices.map((d) => d.name),
       ndiNetwork,
+      ndiInputs: ndi.map((n) => n.inputName),
     };
   } catch (err) {
     return { connected: false, error: err.message };
